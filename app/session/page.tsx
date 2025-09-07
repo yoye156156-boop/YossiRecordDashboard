@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react"
 import { saveSession } from "../../lib/sessions.js"
 import { startMockHebrewStream } from "../../lib/mockStream.js"
 import { rms, smooth } from "../../lib/audioLevel.js"
+import { saveAudio } from "../../lib/audioStore.js"
 
 type Sess = { id: string, at: string, lines: string[] }
 
@@ -29,11 +30,10 @@ export default function SessionPage() {
   const stopMock = () => { if (abortCtl.current) abortCtl.current.abort(); abortCtl.current = null }
 
   const startMic = async () => {
-    // הרשאת מיקרופון
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
     streamRef.current = stream
 
-    // MediaRecorder לאיסוף אודיו (נוריד כ-WebM בסוף)
+    // MediaRecorder
     const mr = new MediaRecorder(stream)
     chunksRef.current = []
     mr.addEventListener("dataavailable", (e) => { if (e.data && e.data.size) chunksRef.current.push(e.data) })
@@ -49,7 +49,7 @@ export default function SessionPage() {
     mr.start(1000)
     mediaRecorderRef.current = mr
 
-    // WebAudio למד עוצמה (VU)
+    // WebAudio VU
     const AC: any = (window as any).AudioContext || (window as any).webkitAudioContext
     const ac = new AC()
     audioCtxRef.current = ac
@@ -98,7 +98,7 @@ export default function SessionPage() {
   const start = async () => {
     setLines([])
     await startMic()
-    // מוק תמלול
+    // mock transcript
     abortCtl.current = new AbortController()
     startMockHebrewStream({
       intervalMs: 2000,
@@ -113,19 +113,21 @@ export default function SessionPage() {
     stopMic()
     setRunning(false)
 
-    // שמירת סשן טקסטואלי
     const id = String(Date.now())
     const at = new Date().toISOString()
     saveSession({ id, at, lines: [...lines] })
 
-    // יצירת הורדת אודיו (אם יש הקלטה)
+    // Save audio to IndexedDB & download
     try {
       const audioBlob = await audioBlobPromiseRef.current?.catch(() => null)
-      if (audioBlob && audioBlob.size > 0) downloadBlob(audioBlob, `session-${id}.webm`)
+      if (audioBlob && audioBlob.size > 0) {
+        await saveAudio(id, audioBlob)
+        downloadBlob(audioBlob, `session-${id}.webm`)
+      }
     } catch {}
   }
 
-  useEffect(() => () => { // ניקוי על עזיבה
+  useEffect(() => () => { // cleanup on unmount
     stopMock()
     stopMic()
   }, [])
@@ -134,7 +136,7 @@ export default function SessionPage() {
     <main style={{ maxWidth: 800, margin: "40px auto", padding: 16 }}>
       <h1>סשן חי</h1>
 
-      {/* עוצמת מיקרופון */}
+      {/* VU meter */}
       <div style={{ margin: "12px 0" }}>
         <div style={{ marginBottom: 6 }}>עוצמה</div>
         <div style={{ height: 10, background: "#eee", borderRadius: 6, overflow: "hidden" }}>
@@ -147,12 +149,12 @@ export default function SessionPage() {
         </div>
       </div>
 
-      {/* כפתור הפעלה/עצירה */}
+      {/* Start/Stop */}
       <div style={{ display: "flex", gap: 12, margin: "12px 0" }}>
         {!running ? <button onClick={start}>Start</button> : <button onClick={stop}>Stop</button>}
       </div>
 
-      {/* תמלול */}
+      {/* Transcript */}
       <h2 style={{ marginTop: 16 }}>תמלול</h2>
       <div style={{ border: "1px solid #eee", padding: 12, minHeight: 160, whiteSpace: "pre-wrap" }}>
         {lines.length === 0 ? <span style={{ color: "#888" }}>— ריק כרגע —</span> : lines.join("\n")}

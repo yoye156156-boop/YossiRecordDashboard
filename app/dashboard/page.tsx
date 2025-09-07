@@ -2,13 +2,30 @@
 import Link from "next/link"
 import { useEffect, useState } from "react"
 import { loadSessions, clearSessions } from "../../lib/sessions.js"
+import { getAudio, hasAudio, clearAllAudio } from "../../lib/audioStore.js"
 
 type Sess = { id: string, at: string, lines: string[] }
 
 export default function Dashboard() {
   const [items, setItems] = useState<Sess[]>([])
-  useEffect(() => { setItems(loadSessions()) }, [])
+  const [audioAvail, setAudioAvail] = useState<Record<string, boolean>>({})
+
+  useEffect(() => {
+    const list = loadSessions()
+    setItems(list)
+    ;(async () => {
+      const map: Record<string, boolean> = {}
+      for (const s of list) map[s.id] = await hasAudio(s.id)
+      setAudioAvail(map)
+    })()
+  }, [])
+
   const clear = () => { clearSessions(); setItems([]) }
+  const clearAudio = async () => {
+    await clearAllAudio()
+    setAudioAvail({})
+    alert("אודיו נמחק מהדפדפן")
+  }
 
   const downloadPdf = async (s: Sess) => {
     try {
@@ -32,6 +49,19 @@ export default function Dashboard() {
     }
   }
 
+  const downloadAudio = async (s: Sess) => {
+    const blob = await getAudio(s.id)
+    if (!blob) return alert("לא נמצא אודיו לסשן הזה")
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = `session-${s.id}.webm`
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
+  }
+
   return (
     <main style={{ maxWidth: 800, margin: "40px auto", padding: 16 }}>
       <h1 style={{ marginBottom: 16 }}>דשבורד</h1>
@@ -39,6 +69,7 @@ export default function Dashboard() {
       <div style={{ display:"flex", gap:12, marginBottom:16 }}>
         <Link href="/session"><button>התחל פגישה חדשה</button></Link>
         <button onClick={clear}>נקה היסטוריה</button>
+        <button onClick={clearAudio}>נקה אודיו (IndexedDB)</button>
       </div>
 
       <h2 style={{ margin: "12px 0" }}>פגישות אחרונות</h2>
@@ -52,8 +83,9 @@ export default function Dashboard() {
                 <div><b>{new Date(s.at).toLocaleString("he-IL")}</b></div>
                 <div style={{ color:"#555" }}>{s.lines[0]}</div>
               </div>
-              <div>
+              <div style={{ display:"flex", gap:8 }}>
                 <button onClick={() => downloadPdf(s)}>הורד PDF</button>
+                <button onClick={() => downloadAudio(s)} disabled={!audioAvail[s.id]}>הורד אודיו</button>
               </div>
             </li>
           ))}
