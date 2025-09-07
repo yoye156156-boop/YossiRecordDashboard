@@ -1,6 +1,6 @@
 "use client"
 import Link from "next/link"
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { loadSessions, clearSessions } from "../../lib/sessions.js"
 import { getAudio, hasAudio, clearAllAudio } from "../../lib/audioStore.js"
 
@@ -9,6 +9,9 @@ type Sess = { id: string, at: string, lines: string[] }
 export default function Dashboard() {
   const [items, setItems] = useState<Sess[]>([])
   const [audioAvail, setAudioAvail] = useState<Record<string, boolean>>({})
+  const [playingId, setPlayingId] = useState<string | null>(null)
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+  const revokeRef = useRef<(() => void) | null>(null)
 
   useEffect(() => {
     const list = loadSessions()
@@ -18,6 +21,16 @@ export default function Dashboard() {
       for (const s of list) map[s.id] = await hasAudio(s.id)
       setAudioAvail(map)
     })()
+  }, [])
+
+  // ניקוי משאבים על עזיבת הדף
+  useEffect(() => {
+    return () => {
+      try { audioRef.current?.pause() } catch {}
+      audioRef.current = null
+      revokeRef.current?.()
+      revokeRef.current = null
+    }
   }, [])
 
   const clear = () => { clearSessions(); setItems([]) }
@@ -62,6 +75,45 @@ export default function Dashboard() {
     URL.revokeObjectURL(url)
   }
 
+  const togglePlay = async (s: Sess) => {
+    // אם כבר מנגן את אותו סשן — עצור
+    if (playingId === s.id) {
+      try { audioRef.current?.pause() } catch {}
+      audioRef.current = null
+      revokeRef.current?.(); revokeRef.current = null
+      setPlayingId(null)
+      return
+    }
+    // עצור כל ניגון קודם
+    if (audioRef.current) {
+      try { audioRef.current.pause() } catch {}
+      audioRef.current = null
+    }
+    revokeRef.current?.(); revokeRef.current = null
+
+    // הבא Blob מה-IndexedDB
+    const blob = await getAudio(s.id)
+    if (!blob) { alert("לא נמצא אודיו לסשן הזה"); return }
+    const url = URL.createObjectURL(blob)
+    revokeRef.current = () => URL.revokeObjectURL(url)
+
+    const a = new Audio(url)
+    audioRef.current = a
+    a.onended = () => {
+      setPlayingId(null)
+      audioRef.current = null
+      revokeRef.current?.(); revokeRef.current = null
+    }
+    try {
+      await a.play()
+      setPlayingId(s.id)
+    } catch (err:any) {
+      revokeRef.current?.(); revokeRef.current = null
+      audioRef.current = null
+      alert("ניגון נכשל: " + err?.message)
+    }
+  }
+
   return (
     <main style={{ maxWidth: 800, margin: "40px auto", padding: 16 }}>
       <h1 style={{ marginBottom: 16 }}>דשבורד</h1>
@@ -86,6 +138,9 @@ export default function Dashboard() {
               <div style={{ display:"flex", gap:8 }}>
                 <button onClick={() => downloadPdf(s)}>הורד PDF</button>
                 <button onClick={() => downloadAudio(s)} disabled={!audioAvail[s.id]}>הורד אודיו</button>
+                <button onClick={() => togglePlay(s)} disabled={!audioAvail[s.id]}>
+                  {playingId === s.id ? "עצור" : "נגן"}
+                </button>
               </div>
             </li>
           ))}
