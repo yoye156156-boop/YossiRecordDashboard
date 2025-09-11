@@ -3,18 +3,17 @@ import path from "node:path";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
 
-// להשאיר LRI/PDI/RLM; להסיר רק מבודדים בעייתיים
-const STRIP_BIDI = /[\u202A-\u202E]/g;
+// מסיר תווי כיווניות/פורמט שגורמים לריבועים בחלק מצופי PDF
+const STRIP_BIDI = /[\u200E\u200F\u202A-\u202E\u2066-\u2069]/g;
 const clean = (s) => String(s ?? "").replace(STRIP_BIDI, "");
 
-// DD.MM.YYYY HH:mm:ss
+// פורמט תאריך ידני: DD.MM.YYYY HH:mm:ss
 const pad2 = (n) => String(n).padStart(2, "0");
-function fmtDate(input) {
+function formatDateISOish(input) {
   const d = new Date(input || Date.now());
-  return `${pad2(d.getDate())}.${pad2(d.getMonth()+1)}.${d.getFullYear()} ${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
-}
-function makeDateLine(dateStr) {
-  return `נוצר:\u200F \u2066${dateStr}\u2069`;
+  const date = `${pad2(d.getDate())}.${pad2(d.getMonth()+1)}.${d.getFullYear()}`;
+  const time = `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
+  return `${date} ${time}`;
 }
 
 export async function buildPdf({ id, title, date, lines = [] }) {
@@ -25,17 +24,18 @@ export async function buildPdf({ id, title, date, lines = [] }) {
   try {
     const fontPath = path.join(process.cwd(), "public", "fonts", "NotoSansHebrew-Regular.ttf");
     const fontBytes = fs.readFileSync(fontPath);
-    font = await pdfDoc.embedFont(fontBytes, { subset: false });
+    font = await pdfDoc.embedFont(fontBytes, { subset: true });
   } catch {
     font = await pdfDoc.embedFont(StandardFonts.Helvetica);
   }
 
   const A4 = [595.28, 841.89];
   const margin = 50;
-  const sizeTitle = 20, sizeBody = 12, sizeFoot = 10;
+  const sizeTitle = 20;
+  const sizeBody  = 12;
+  const sizeFoot  = 10;
 
-  const dateStr = fmtDate(date);
-  const dateLine = makeDateLine(dateStr);
+  const dateStr = formatDateISOish(date);
 
   const pages = [];
   let page = pdfDoc.addPage(A4);
@@ -49,20 +49,27 @@ export async function buildPdf({ id, title, date, lines = [] }) {
     p.drawText(text, { x, y: yPos, size, font, color: rgb(0,0,0) });
   };
 
+  // כותרת + תאריך (ללא תווי bidi וללא לוקליזציה אוטומטית)
   y -= sizeTitle;
   drawRight(page, title || `דוח פגישה #${id}`, y, sizeTitle);
   y -= 24;
-  drawRight(page, dateLine, y, sizeBody);
+  drawRight(page, `נוצר: ${dateStr}`, y, sizeBody);
   y -= 18;
 
-  const newPage = () => { page = pdfDoc.addPage(A4); pages.push(page); y = A4[1] - margin; };
+  const newPage = () => {
+    page = pdfDoc.addPage(A4);
+    pages.push(page);
+    y = A4[1] - margin;
+  };
+
   for (const line of lines) {
-    const lh = 16;
-    if (y - lh < margin + 20) newPage();
-    y -= lh;
+    const lineHeight = 16;
+    if (y - lineHeight < margin + 20) newPage();
+    y -= lineHeight;
     drawRight(page, line, y, sizeBody);
   }
 
+  // מספור עמודים
   const total = pages.length;
   pages.forEach((p, i) => {
     const label = clean(`עמוד ${i + 1} מתוך ${total}`);

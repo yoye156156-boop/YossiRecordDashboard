@@ -1,164 +1,182 @@
-"use client"
+"use client";
+import { useEffect, useRef, useState } from "react";
+import { upsertSession } from "../../lib/sessions.js";
+import { saveAudio } from "../../lib/audioStore.js";
+import { computeRms, smoother } from "../../lib/audioLevel.js";
+import { startMockStream } from "../../lib/mockStream.js";
 
-import { useEffect, useRef, useState } from "react"
-import { saveSession } from "../../lib/sessions.js"
-import { startMockHebrewStream } from "../../lib/mockStream.js"
-import { rms, smooth } from "../../lib/audioLevel.js"
-import { saveAudio } from "../../lib/audioStore.js"
+type Sess = { id: string, at: string, lines: string[] };
 
-type Sess = { id: string, at: string, lines: string[] }
+const canUseMic = () =>
+  typeof window !== "undefined" &&
+  window.isSecureContext &&
+  !!navigator.mediaDevices &&
+  !!navigator.mediaDevices.getUserMedia;
 
 export default function SessionPage() {
-  const [running, setRunning] = useState(false)
-  const [lines, setLines] = useState<string[]>([])
-  const [vu, setVu] = useState(0) // 0..1
+  const [sess, setSess] = useState<Sess | null>(null);
+  const [vu, setVu] = useState(0);
+  const [running, setRunning] = useState(false);
 
-  // mic / audio refs
-  const streamRef = useRef<MediaStream | null>(null)
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
-  const audioCtxRef = useRef<AudioContext | null>(null)
-  const analyserRef = useRef<AnalyserNode | null>(null)
-  const rafRef = useRef<number | null>(null)
-  const levelRef = useRef(0)
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const rafRef = useRef<number | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const recRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const abortMockRef = useRef<AbortController | null>(null);
 
-  // chunks & promise that resolves to final Blob when recorder stops
-  const chunksRef = useRef<Blob[]>([])
-  const audioBlobPromiseRef = useRef<Promise<Blob> | null>(null)
+  // יצירת סשן חדש
+  const newSession = () => {
+    const s: Sess = { id: Date.now().toString(), at: new Date().toISOString(), lines: [] };
+    setSess(s);
+    upsertSession(s);
+    return s;
+  };
 
-  // mock transcript stream
-  const abortCtl = useRef<AbortController | null>(null)
-  const stopMock = () => { if (abortCtl.current) abortCtl.current.abort(); abortCtl.current = null }
+  const appendLine = (line: string) => {
+    setSess((prev) => {
+      if (!prev) return prev;
+      const next = { ...prev, lines: [...prev.lines, line] };
+      upsertSession(next);
+      return next;
+    });
+  };
+
+  // הפעלת מוק (עברית כל 2 שניות)
+  const startMock = () => {
+    const ctrl = new AbortController();
+    abortMockRef.current = ctrl;
+    startMockStream({ onLine: appendLine, signal: ctrl.signal, intervalMs: 2000 });
+  };
+
+  const stopMock = () => {
+    abortMockRef.current?.abort();
+    abortMockRef.current = null;
+  };
 
   const startMic = async () => {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-    streamRef.current = stream
-
-    // MediaRecorder
-    const mr = new MediaRecorder(stream)
-    chunksRef.current = []
-    mr.addEventListener("dataavailable", (e) => { if (e.data && e.data.size) chunksRef.current.push(e.data) })
-    const stopped = new Promise<Blob>((resolve) => {
-      mr.addEventListener("stop", () => {
-        const type = mr.mimeType || "audio/webm"
-        const blob = new Blob(chunksRef.current, { type })
-        chunksRef.current = []
-        resolve(blob)
-      }, { once: true })
-    })
-    audioBlobPromiseRef.current = stopped
-    mr.start(1000)
-    mediaRecorderRef.current = mr
-
-    // WebAudio VU
-    const AC: any = (window as any).AudioContext || (window as any).webkitAudioContext
-    const ac = new AC()
-    audioCtxRef.current = ac
-    const src = ac.createMediaStreamSource(stream)
-    const analyser = ac.createAnalyser()
-    analyser.fftSize = 1024
-    src.connect(analyser)
-    analyserRef.current = analyser
-
-    const buf = new Float32Array(analyser.fftSize)
-    const loop = () => {
-      analyser.getFloatTimeDomainData(buf)
-      const r = rms(buf)
-      levelRef.current = smooth(levelRef.current, r, 0.25)
-      setVu(Math.min(1, Math.max(0, levelRef.current)))
-      rafRef.current = requestAnimationFrame(loop)
+    // אם אין הרשאות/localhost — אל תקרוס; הסבר + מוק
+    if (!canUseMic()) {
+      alert(
+        "הדפדפן לא מאפשר מיקרופון ללא HTTPS/localhost.\n" +
+        "פתח דרך http://localhost:3000 (למשל עם SSH Tunnel),\n" +
+        "או גלוש מתוך קאלי ב-127.0.0.1. נמשיך במצב מדומה."
+      );
+      startMock();
+      return;
     }
-    loop()
-  }
 
-  const stopMic = () => {
-    if (rafRef.current != null) { cancelAnimationFrame(rafRef.current); rafRef.current = null }
-    if (audioCtxRef.current) { audioCtxRef.current.close().catch(()=>{}); audioCtxRef.current = null }
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
-      try { mediaRecorderRef.current.stop() } catch {}
-      mediaRecorderRef.current = null
-    }
-    if (streamRef.current) {
-      for (const tr of streamRef.current.getTracks()) tr.stop()
-      streamRef.current = null
-    }
-    setVu(0)
-  }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
 
-  const downloadBlob = (blob: Blob, filename: string) => {
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement("a")
-    a.href = url
-    a.download = filename
-    document.body.appendChild(a)
-    a.click()
-    a.remove()
-    URL.revokeObjectURL(url)
-  }
+      // MediaRecorder
+      const mr = new MediaRecorder(stream, { mimeType: "audio/webm" });
+      recRef.current = mr;
+      chunksRef.current = [];
+      mr.ondataavailable = (ev) => ev.data && chunksRef.current.push(ev.data);
+      mr.start();
+
+      // WebAudio VU
+      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      audioCtxRef.current = ctx;
+      const src = ctx.createMediaStreamSource(stream);
+      const an = ctx.createAnalyser();
+      an.fftSize = 2048;
+      src.connect(an);
+      analyserRef.current = an;
+
+      const smooth = smoother(0.2);
+      const buf = new Float32Array(an.frequencyBinCount);
+
+      const tick = () => {
+        an.getFloatTimeDomainData(buf);
+        const rms = computeRms(buf);
+        setVu(smooth(rms));
+        rafRef.current = requestAnimationFrame(tick);
+      };
+      rafRef.current = requestAnimationFrame(tick);
+    } catch (err: any) {
+      alert("לא ניתן לפתוח מיקרופון: " + (err?.message ?? err));
+      startMock();
+    }
+  };
+
+  const stopAll = async () => {
+    // עצירת מוק אם רץ
+    stopMock();
+
+    // עצירת הקלטה
+    const mr = recRef.current;
+    if (mr && mr.state !== "inactive") {
+      const done = new Promise<void>((res) => (mr.onstop = () => res()));
+      mr.stop();
+      await done;
+      // שמירת אודיו
+      const blob = new Blob(chunksRef.current, { type: "audio/webm" });
+      if (sess) await saveAudio(sess.id, blob);
+    }
+
+    // עצירת סטראים
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    streamRef.current = null;
+
+    // ניקוי VU
+    if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
+    rafRef.current = null;
+    analyserRef.current?.disconnect();
+    analyserRef.current = null;
+    audioCtxRef.current?.close().catch(() => {});
+    audioCtxRef.current = null;
+  };
 
   const start = async () => {
-    setLines([])
-    await startMic()
-    // mock transcript
-    abortCtl.current = new AbortController()
-    startMockHebrewStream({
-      intervalMs: 2000,
-      abortSignal: abortCtl.current.signal,
-      onData: (s: string) => setLines(prev => [...prev, s])
-    })
-    setRunning(true)
-  }
+    if (running) return;
+    const s = newSession();
+    appendLine("שלום מה שלומך היום");
+    setRunning(true);
+    await startMic();          // יפעיל מיקרופון או מוק
+  };
 
   const stop = async () => {
-    stopMock()
-    stopMic()
-    setRunning(false)
+    if (!running) return;
+    await stopAll();
+    setRunning(false);
+    appendLine("סיום סשן");
+  };
 
-    const id = String(Date.now())
-    const at = new Date().toISOString()
-    saveSession({ id, at, lines: [...lines] })
+  useEffect(() => {
+    return () => { stopAll().catch(() => {}); };
+  }, []);
 
-    // Save audio to IndexedDB & download
-    try {
-      const audioBlob = await audioBlobPromiseRef.current?.catch(() => null)
-      if (audioBlob && audioBlob.size > 0) {
-        await saveAudio(id, audioBlob)
-        downloadBlob(audioBlob, `session-${id}.webm`)
-      }
-    } catch {}
-  }
-
-  useEffect(() => () => { // cleanup on unmount
-    stopMock()
-    stopMic()
-  }, [])
+  const barWidth = Math.min(100, Math.round((vu || 0) * 300));
 
   return (
     <main style={{ maxWidth: 800, margin: "40px auto", padding: 16 }}>
-      <h1>סשן חי</h1>
+      <h1>סשן</h1>
+      <div style={{ display: "flex", gap: 12, margin: "12px 0" }}>
+        <button onClick={start} disabled={running}>התחל</button>
+        <button onClick={stop} disabled={!running}>עצור</button>
+      </div>
 
-      {/* VU meter */}
-      <div style={{ margin: "12px 0" }}>
-        <div style={{ marginBottom: 6 }}>עוצמה</div>
-        <div style={{ height: 10, background: "#eee", borderRadius: 6, overflow: "hidden" }}>
+      <div style={{ marginTop: 8 }}>
+        <div style={{ fontWeight: "bold", marginBottom: 6 }}>עוצמת קול (VU)</div>
+        <div style={{ width: 300, height: 12, background: "#eee", borderRadius: 6 }}>
           <div style={{
-            height: "100%",
-            width: `${Math.round(vu * 100)}%`,
-            background: vu > 0.75 ? "#e53935" : vu > 0.5 ? "#fb8c00" : "#43a047",
-            transition: "width 60ms linear"
-          }} />
+            width: barWidth,
+            height: 12,
+            background: "#3b82f6",
+            borderRadius: 6,
+            transition: "width 80ms linear"
+          }}/>
         </div>
       </div>
 
-      {/* Start/Stop */}
-      <div style={{ display: "flex", gap: 12, margin: "12px 0" }}>
-        {!running ? <button onClick={start}>Start</button> : <button onClick={stop}>Stop</button>}
-      </div>
-
-      {/* Transcript */}
-      <h2 style={{ marginTop: 16 }}>תמלול</h2>
-      <div style={{ border: "1px solid #eee", padding: 12, minHeight: 160, whiteSpace: "pre-wrap" }}>
-        {lines.length === 0 ? <span style={{ color: "#888" }}>— ריק כרגע —</span> : lines.join("\n")}
-      </div>
+      <h2 style={{ marginTop: 20 }}>תמלול</h2>
+      <ul>
+        {(sess?.lines || []).map((ln, i) => <li key={i} style={{ textAlign: "right" }}>{ln}</li>)}
+      </ul>
     </main>
-  )
+  );
 }

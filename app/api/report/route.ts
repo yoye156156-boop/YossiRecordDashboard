@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
-import { buildPdf } from "../../../lib/pdf.js";
-
 export const runtime = "nodejs";
 
 export async function POST(req: Request) {
   try {
     const body = await req.json().catch(() => ({}));
+    const { buildPdf } = await import("../../../lib/pdf.js");
+
     const id    = body?.id ?? Date.now().toString();
     const title = body?.title ?? `דוח פגישה #${id}`;
     const date  = body?.date ?? new Date().toISOString();
@@ -20,6 +20,7 @@ export async function POST(req: Request) {
       },
     });
   } catch (e: any) {
-    return new NextResponse(String(e?.message ?? e), { status: 500 });
+    console.error("PDF route error:", e);
+    return NextResponse.json({ error: String(e?.message ?? e) }, { status: 500 });
   }
 }

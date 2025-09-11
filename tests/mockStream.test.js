@@ -1,31 +1,24 @@
-import test from 'node:test';
-import assert from 'node:assert/strict';
-import { startMockHebrewStream } from '../lib/mockStream.js';
+import test from "node:test";
+import assert from "node:assert/strict";
+import { startMockHebrewStream } from "../lib/mockStream.js";
 
-const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-
-test('emits periodically and stops on abort', async () => {
-  const controller = new AbortController();
+test("mock stream emits periodically and stops on abort", async () => {
   const lines = [];
-
+  const ctrl = new AbortController();
   const { stop } = startMockHebrewStream({
-    intervalMs: 5,             // מהיר מאוד לטסטים
-    onData: (s) => lines.push(s),
-    abortSignal: controller.signal,
+    onLine: (s) => lines.push(s),
+    signal: ctrl.signal,
+    intervalMs: 5, // מהיר לטסטים
   });
 
-  // חכה שיהיו לפחות שתי פליטות
-  await sleep(30);
-  assert.ok(lines.length >= 2, 'expected at least two emissions before abort');
-
-  // עצור
-  controller.abort();
-  const afterAbortCount = lines.length;
-
-  // חכה עוד קצת כדי לוודא שאין פליטות נוספות
-  await sleep(40);
-  assert.equal(lines.length, afterAbortCount, 'no emissions after abort');
-
-  // סגירה בטוחה (idempotent)
+  // תן לזמן לעבור כדי לקבל כמה פליטות
+  await new Promise((r) => setTimeout(r, 25));
+  ctrl.abort();
   stop();
+
+  const countAtAbort = lines.length;
+  await new Promise((r) => setTimeout(r, 20)); // לוודא שלא ממשיך אחרי עצירה
+
+  assert.ok(countAtAbort >= 2, "should emit at least 2 lines before abort");
+  assert.equal(lines.length, countAtAbort, "should not emit after abort");
 });
