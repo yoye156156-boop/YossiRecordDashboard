@@ -6,7 +6,6 @@ import { loadSessions, clearSessions } from "../../lib/sessions.js";
 
 type Sess = { id: string; at: string; lines: string[] };
 
-// המרה ל-base64 בלי תלות חיצונית
 function bufToBase64(ab: ArrayBuffer): string {
   const bytes = new Uint8Array(ab);
   let binary = "";
@@ -14,9 +13,17 @@ function bufToBase64(ab: ArrayBuffer): string {
   for (let i = 0; i < bytes.length; i += chunk) {
     binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
   }
-  // btoa מתבקש כאן (יש בדפדפנים)
   return btoa(binary);
 }
+<div>
+  <button onClick={() => downloadPdf(s)} style={{marginInlineEnd:8}}>הורד PDF</button>
+  <button onClick={() => downloadArchive(s)}>הורד ארכיון</button>
+</div>
+<div>
+  <button onClick={() => downloadPdf(s)} style={{ marginInlineEnd: 8 }}>הורד PDF</button>
+  <button onClick={() => downloadArchive(s)}>הורד ארכיון</button>
+</div>
+
 
 export default function Dashboard() {
   const [items, setItems] = useState<Sess[]>([]);
@@ -26,6 +33,24 @@ export default function Dashboard() {
   }, []);
 
   const clear = () => { clearSessions(); setItems([]); };
+
+  const removeOne = async (id: string) => {
+    // מוחק מ-localStorage
+    const next = items.filter(x => x.id !== id);
+    try {
+      const raw = localStorage.getItem("sessions");
+      const arr = raw ? JSON.parse(raw) : [];
+      const filtered = arr.filter((x: any) => x?.id !== id);
+      localStorage.setItem("sessions", JSON.stringify(filtered));
+    } catch {}
+    setItems(next);
+
+    // מוחק גם את האודיו מה-IndexedDB אם קיים
+    try {
+      const store = await import("../../lib/audioStore.js");
+      if (typeof store.del === "function") await store.del(id);
+    } catch {}
+  };
 
   const downloadPdf = async (s: Sess) => {
     try {
@@ -52,11 +77,65 @@ export default function Dashboard() {
     } catch (e: any) {
       alert("שגיאה ביצירת PDF: " + (e?.message || e));
     }
-  };
+
+
+const downloadArchive = async (s: Sess) => {
+  try {
+    const res = await fetch("/api/archive", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: s.id,
+        title: `דוח פגישה #${s.id}`,
+        date: s.at,
+        lines: s.lines
+      }),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `session-${s.id}.tar.gz`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  } catch (e:any) {
+    alert("שגיאה ביצירת ארכיון: " + e.message);
+  }
+};
+
+
+const downloadArchive = async (s: Sess) => {
+  try {
+    const res = await fetch("/api/archive", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: s.id,
+        title: `דוח פגישה #${s.id}`,
+        date: s.at,
+        lines: s.lines
+      }),
+    })
+    if (!res.ok) throw new Error(await res.text())
+    const blob = await res.blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = `session-${s.id}.tar.gz`
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
+  } catch (e:any) {
+    alert("שגיאה ביצירת ארכיון: " + e.message)
+  }
+}
 
   const downloadArchive = async (s: Sess) => {
     try {
-      // ננסה להביא אודיו אם קיים
       let audioBase64: string | undefined = undefined;
       try {
         const store = await import("../../lib/audioStore.js");
@@ -67,9 +146,7 @@ export default function Dashboard() {
             audioBase64 = bufToBase64(ab);
           }
         }
-      } catch {
-        // אין מחסן/אודיו – נמשיך עם PDF בלבד
-      }
+      } catch {}
 
       const res = await fetch("/api/archive", {
         method: "POST",
@@ -79,7 +156,7 @@ export default function Dashboard() {
           title: `דוח פגישה #${s.id}`,
           date: s.at,
           lines: s.lines,
-          audioBase64,                // יתווסף אם קיים
+          audioBase64,
           audioName: `audio-${s.id}.webm`,
         }),
       });
@@ -135,6 +212,7 @@ export default function Dashboard() {
               <div style={{ display: "flex", gap: 8 }}>
                 <button onClick={() => downloadPdf(s)}>הורד PDF</button>
                 <button onClick={() => downloadArchive(s)}>הורד ארכיון (.tar.gz)</button>
+                <button onClick={() => removeOne(s.id)}>מחק</button>
               </div>
             </li>
           ))}
