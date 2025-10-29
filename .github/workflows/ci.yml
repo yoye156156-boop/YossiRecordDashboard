@@ -1,0 +1,20 @@
+name: CI
+on:
+  push:
+  pull_request:
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20', cache: 'npm' }
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build
+      # להריץ בדיקות smoke כנגד dev server
+      - run: nohup npm run dev > /dev/null 2>&1 &
+      - run: |
+          echo "Waiting for dev server..."
+          for i in {1..30}; do curl -fsS http://localhost:3000 && break || sleep 1; done
+      - run: npm test

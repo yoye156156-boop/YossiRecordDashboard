@@ -1,0 +1,39 @@
+import { NextResponse } from 'next/server';
+import type { NextRequest } from 'next/server';
+
+export function middleware(_req: NextRequest) {
+  const env = (process.env.NODE_ENV ?? '').toLowerCase();
+
+  // ---- DEV: בלי CSP בכלל כדי לא לשבור HMR/inline ----
+  if (env !== 'production') {
+    const res = NextResponse.next();
+    res.headers.set('X-Env-Resolved', 'dev');
+    return res; // אין Content-Security-Policy ב-dev
+  }
+
+  // ---- PROD: CSP קשיח, ללא eval; עם inline לסקריפטי Next בלבד ----
+  const res = NextResponse.next();
+  res.headers.set('X-Env-Resolved', 'prod');
+  res.headers.set('X-Frame-Options', 'SAMEORIGIN');
+  res.headers.set('X-Content-Type-Options', 'nosniff');
+  res.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  res.headers.set(
+    'Content-Security-Policy',
+    [
+      "default-src 'self'",
+      "script-src 'self' 'unsafe-inline'", // לשיקולך: נעבור ל-nonce כשיהיה אינטרנט
+      "style-src 'self' 'unsafe-inline'",
+      "img-src 'self' data: blob:",
+      "connect-src 'self'",
+      "font-src 'self' data:",
+      "frame-ancestors 'self'",
+    ].join('; ')
+  );
+  return res;
+}
+
+// אל תריץ על נכסי Next עצמם
+export const config = {
+  matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],
+};

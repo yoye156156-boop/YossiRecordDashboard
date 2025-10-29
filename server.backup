@@ -1,0 +1,43 @@
+import express from "express";
+import cors from "cors";
+import fs from "fs";
+import path from "path";
+
+const app = express();
+const PORT = 3001;
+const RECORDINGS_DIR = path.join(process.cwd(), "recordings");
+
+app.use(cors());
+app.use(express.json());
+// הגשה סטטית לצפייה/ניגון ישיר בדפדפן
+app.use("/recordings", express.static(RECORDINGS_DIR, { fallthrough: true }));
+
+// ✅ רשימת קבצים עם מטא-דאטה: name, size, mtimeMs, ext
+app.get("/api/recordings", (req, res) => {
+  try {
+    const items = fs.readdirSync(RECORDINGS_DIR, { withFileTypes: true });
+    const files = items
+      .filter((d) => d.isFile())
+      .map((d) => {
+        const filePath = path.join(RECORDINGS_DIR, d.name);
+        const st = fs.statSync(filePath);
+        return {
+          name: d.name,
+          size: st.size,
+          mtimeMs: st.mtimeMs,
+          ext: path.extname(d.name).slice(1).toLowerCase(),
+        };
+      });
+    res.json(files);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Failed to read recordings" });
+  }
+});
+
+// ✅ הורדת קובץ (עם סניטציה לשם)
+app.get("/api/download/:name", (req, res) => {
+  // סניטציה: מוודאים שלא נעשה שימוש בנתיב חיצוני
+  const safeName = path.basename(req.params.name);
+  const filePath = path.join(RECORDINGS_DIR, safeName);
+  if (fs.existsSync(filePath) && fs.statSync(fi

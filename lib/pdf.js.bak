@@ -1,84 +1,85 @@
-import fs from "node:fs";
+// lib/pdf.js — JavaScript רגיל (ESM), עובד ב-Node runtime של Next
+import fs from "node:fs/promises";
 import path from "node:path";
-import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
+import { PDFDocument } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
 
-// מסיר תווי כיווניות/פורמט שגורמים לריבועים בחלק מצופי PDF
-const STRIP_BIDI = /[\u200E\u200F\u202A-\u202E\u2066-\u2069]/g;
-const clean = (s) => String(s ?? "").replace(STRIP_BIDI, "");
+const A4 = [595.28, 841.89]; // points
+const MARGIN = 40;
 
-// פורמט תאריך ידני: DD.MM.YYYY HH:mm:ss
-const pad2 = (n) => String(n).padStart(2, "0");
-function formatDateISOish(input) {
-  const d = new Date(input || Date.now());
-  const date = `${pad2(d.getDate())}.${pad2(d.getMonth()+1)}.${d.getFullYear()}`;
-  const time = `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
-  return `${date} ${time}`;
+// עוטף RTL ודואג שמספרים יוצגו LTR כדי שלא יתהפכו ב-RTL
+function rtlWrap(s) {
+  const RLE = "\u202B"; // Right-to-Left Embedding
+  const LRE = "\u202A"; // Left-to-Right Embedding
+  const PDF = "\u202C"; // Pop Directional Formatting
+  const withDigits = String(s).replace(/\d[\d:/.-]*/g, (m) => `${LRE}${m}${PDF}`);
+  return `${RLE}${withDigits}${PDF}`;
+}
+
+// בוחר פונט עברי/גנרי שמותקן במכונה או בקובץ שבפרויקט
+async function pickFont() {
+  const root = process.cwd();
+  const candidates = [
+    path.join(root, "public", "fonts", "NotoSansHebrew-Regular.ttf"), // אם הורדנו לפרויקט
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",                // קיסטנדרטי בקאלי/דביאן
+    "/usr/share/fonts/truetype/freefont/FreeSans.ttf",                // נפוץ גם כן
+  ];
+  for (const p of candidates) {
+    try {
+      const buf = await fs.readFile(p);
+      return { buf, path: p };
+    } catch {
+      // ננסה את הבא
+    }
+  }
+  throw new Error("לא נמצאה פונט עברית במערכת (בדוק DejaVuSans/FreeSans או public/fonts/NotoSansHebrew-Regular.ttf)");
 }
 
 export async function buildPdf({ id, title, date, lines = [] }) {
   const pdfDoc = await PDFDocument.create();
   pdfDoc.registerFontkit(fontkit);
 
-  let font;
-  try {
-    const fontPath = path.join(process.cwd(), "public", "fonts", "NotoSansHebrew-Regular.ttf");
-    const fontBytes = fs.readFileSync(fontPath);
-    font = await pdfDoc.embedFont(fontBytes, { subset: true });
-  } catch {
-    font = await pdfDoc.embedFont(StandardFonts.Helvetica);
-  }
+  const { buf: heFontBytes, path: heFontPath } = await pickFont();
+  const heFont = await pdfDoc.embedFont(heFontBytes, { subset: true });
 
-  const A4 = [595.28, 841.89];
-  const margin = 50;
-  const sizeTitle = 20;
-  const sizeBody  = 12;
-  const sizeFoot  = 10;
+  const page = pdfDoc.addPage(A4);
+  const { width: w, height: h } = page.getSize();
 
-  const dateStr = formatDateISOish(date);
-
-  const pages = [];
-  let page = pdfDoc.addPage(A4);
-  pages.push(page);
-  let y = A4[1] - margin;
-
-  const drawRight = (p, s, yPos, size) => {
-    const text = clean(s);
-    const w = font.widthOfTextAtSize(text, size);
-    const x = A4[0] - margin - w;
-    p.drawText(text, { x, y: yPos, size, font, color: rgb(0,0,0) });
+  const drawRight = (text, y, size = 14) => {
+    const t = rtlWrap(text);
+    const width = heFont.widthOfTextAtSize(t, size);
+    page.drawText(t, { x: w - MARGIN - width, y, size, font: heFont });
   };
 
-  // כותרת + תאריך (ללא תווי bidi וללא לוקליזציה אוטומטית)
-  y -= sizeTitle;
-  drawRight(page, title || `דוח פגישה #${id}`, y, sizeTitle);
-  y -= 24;
-  drawRight(page, `נוצר: ${dateStr}`, y, sizeBody);
+  // כותרת
+  let y = h - MARGIN - 40;
+  drawRight(title || `דוח פגישה #${id}`, y, 32);
+  y -= 28;
+
+  // תאריך he-IL (תמיד קיים ערך)
+  const dt = new Date(date ?? Date.now());
+  const digits = dt.toLocaleString("he-IL", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  drawRight(`נוצר: ${digits}`, y, 14);
   y -= 18;
 
-  const newPage = () => {
-    page = pdfDoc.addPage(A4);
-    pages.push(page);
-    y = A4[1] - margin;
-  };
-
-  for (const line of lines) {
-    const lineHeight = 16;
-    if (y - lineHeight < margin + 20) newPage();
-    y -= lineHeight;
-    drawRight(page, line, y, sizeBody);
+  // שורות תמלול
+  for (const line of Array.isArray(lines) ? lines : []) {
+    if (y < MARGIN + 40) {
+      // עמוד חדש אם נגמר מקום
+      const newPage = pdfDoc.addPage(A4);
+      y = newPage.getSize()[1] - MARGIN - 24;
+    }
+    drawRight(`• ${line}`, y, 16);
+    y -= 20;
   }
 
-  // מספור עמודים
-  const total = pages.length;
-  pages.forEach((p, i) => {
-    const label = clean(`עמוד ${i + 1} מתוך ${total}`);
-    const w = font.widthOfTextAtSize(label, sizeFoot);
-    const x = A4[0] - margin - w;
-    const yFoot = margin - 12;
-    p.drawText(label, { x, y: yFoot, size: sizeFoot, font, color: rgb(0.3,0.3,0.3) });
-  });
-
   const bytes = await pdfDoc.save();
-  return Buffer.from(bytes);
+  console.log(`PDF fonts → HE: ${heFontPath}`);
+  return bytes;
 }

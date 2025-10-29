@@ -1,0 +1,9 @@
+{
+  "name": "mvp-app",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "menu": "node tools/menu.mjs"
+  },
+  "dependencies": {}
+}

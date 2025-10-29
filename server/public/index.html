@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>דשבורד תיעוד — מצב יוסי</title>
+<style>
+  body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial;
+       background:#f6f7fb;margin:0}
+  header{background:#fff;box-shadow:0 1px 8px rgba(0,0,0,.06);padding:12px 18px}
+  main{max-width:980px;margin:24px auto;padding:0 16px}
+  .card{background:#fff;border-radius:14px;box-shadow:0 6px 20px rgba(0,0,0,.06);padding:18px;margin-bottom:16px}
+  table{width:100%;border-collapse:collapse}
+  th,td{padding:10px;border-top:1px solid #eee;text-align:right}
+  th{background:#fafafa;color:#555}
+  .btn{background:#4f46e5;color:#fff;padding:10px 14px;border:none;border-radius:10px;cursor:pointer}
+  .btn:disabled{opacity:.5}
+  input,select{padding:8px;border:1px solid #ddd;border-radius:8px}
+  .row{display:flex;gap:12px;flex-wrap:wrap}
+</style>
+<header><b>דשבורד תיעוד — מצב יוסי 🎙️</b></header>
+<main>
+  <div class="card">
+    <div class="row">
+      <input id="filePath" placeholder="./recordings/rec_xxx.wav" style="flex:2">
+      <select id="mode"><option value="doc">doc</option><option value="yossi">yossi</option><option value="auto">auto</option></select>
+      <input id="patient" placeholder="שם מטופל (אופציונלי)" style="flex:1">
+      <select id="stamp"><option value="ts">ts</option><option value="none">none</option></select>
+      <button id="run" class="btn">צור וידאו מתועד 🎬</button>
+    </div>
+    <pre id="msg" style="white-space:pre-wrap;margin-top:10px"></pre>
+  </div>
+
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <h3 style="margin:0">ארכיון</h3>
+      <button class="btn" onclick="load()">רענן</button>
+    </div>
+    <table id="tbl"><thead><tr><th>שם קובץ</th><th>גודל</th><th>תאריך</th><th>פעולה</th></tr></thead><tbody></tbody></table>
+  </div>
+</main>
+<script>
+const fmt = n=>{const u=["B","KB","MB","GB"];let i=0;while(n>=1024&&i<u.length-1){n/=1024;i++}return (n||0).toFixed(1)+" "+u[i]};
+async function load(){
+  const res = await fetch("/api/archive"); const d = await res.json();
+  const tb = document.querySelector("#tbl tbody"); tb.innerHTML="";
+  (d.items||[]).forEach(it=>{
+    const tr=document.createElement("tr");
+    tr.innerHTML=`<td>${it.name}</td><td>${fmt(it.size)}</td><td>${new Date(it.mtime).toLocaleString()}</td>
+                  <td><a class="btn" style="text-decoration:none" href="${it.url}" target="_blank">פתח</a></td>`;
+    tb.appendChild(tr);
+  });
+}
+document.querySelector("#run").onclick=async()=>{
+  const filePath=document.querySelector("#filePath").value.trim();
+  const mode=document.querySelector("#mode").value; const patient=document.querySelector("#patient").value.trim();
+  const stamp=document.querySelector("#stamp").value;
+  const msg=document.querySelector("#msg"); msg.textContent="מריץ…";
+  const r=await fetch("/api/runYossi",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({filePath,mode,patient,stamp})});
+  const d=await r.json(); msg.textContent=r.ok?("בוצע.\n"+(d.stdout||"")):("שגיאה:\n"+(d.error||JSON.stringify(d)));
+  load();
+}
+load();
+</script>

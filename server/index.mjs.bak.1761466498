@@ -1,0 +1,62 @@
+import fs from "fs";
+import http from "http";
+import WebSocket, { WebSocketServer } from "ws";
+import url from "url";
+import path from "path";
+import dotenv from "dotenv";
+dotenv.config({ path: path.join(__dirname, ".env") });
+
+const PORT = process.env.PORT || 8787;
+
+// פונקציה ליצירת מזהה ייחודי להקלטה
+function createSessionId() {
+  return "rec_" + Date.now().toString(36);
+}
+
+// יצירת שרת WebSocket
+const server = http.createServer();
+const wss = new WebSocketServer({ server });
+
+wss.on("connection", async (ws, req) => {
+  const params = url.parse(req.url, true).query;
+  const sessionId = createSessionId();
+  const audioPath = path.join(__dirname, "recordings", `${sessionId}.webm`);
+  const fileStream = fs.createWriteStream(audioPath);
+
+  console.log(`🎧 התחילה הקלטה חדשה: ${sessionId}`);
+
+  ws.on("message", (msg) => {
+    if (Buffer.isBuffer(msg)) {
+    } else {
+    } else {
+        // שמירת תמלול סופי לטקסט אם מגיע מהקליינט
+        if (msg.includes("\"type\":\"final\"")) {
+          try {
+            const data = JSON.parse(msg.toString());
+            if (data.text) {
+              const textPath = path.join(__dirname, "recordings", `${sessionId}.txt`);
+              fs.appendFileSync(textPath, data.text + "\n");
+            }
+          } catch (e) { console.error(e); }
+        }
+      try {
+        const data = JSON.parse(msg.toString());
+        if (data.type === "stop") {
+          console.log(`🛑 סיום הקלטה: ${sessionId}`);
+          fileStream.end();
+        }
+      } catch (e) {
+        console.error("Error parsing message:", e);
+      }
+    }
+  });
+
+  ws.on("close", () => {
+    console.log(`🔚 סגירת סשן: ${sessionId}`);
+    fileStream.end();
+  });
+});
+
+server.listen(PORT, () => {
+  console.log(`🚀 WebSocket server running on ws://localhost:${PORT}`);
+});

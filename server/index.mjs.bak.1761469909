@@ -1,0 +1,108 @@
+}
+
+const server = http.createServer();
+const wss = new WebSocketServer({ server, path: '/realtime' });
+
+  
+  ws.on('close', () => {
+    try { webmStream.end(); } catch {}
+    console.log('🔚 session closed');
+  });
+  
+  ws.on('error', (err) => {
+    console.error('WS error:', err);
+    try { webmStream.end(); } catch {}
+  });
+  
+  console.log('🎧 new session:', sessionId);
+
+  // חיבור ל-Deepgram Realtime (נזין לו PCM16 16kHz)
+  const dgUrl = 'wss://api.deepgram.com/v1/listen?encoding=linear16&sample_rate=16000&channels=1&smart_format=true&interim_results=true&language=he';
+  const dg = new WebSocket(dgUrl, { headers: { Authorization: `Token ${DG_KEY}` } });
+
+  dg.on('open', () => ws.send(JSON.stringify({ type: 'info', message: `connected: ${sessionId}` })));
+
+  // אירועי תמלול נכנסים מ-Deepgram – שומרים final לקובץ טקסט
+  dg.on('message', (data) => {
+    try {
+      const msg = JSON.parse(data.toString());
+      const text = msg?.channel?.alternatives?.[0]?.transcript || '';
+      if (!text) return;
+      const isFinal = Boolean(msg?.is_final);
+      ws.send(JSON.stringify({ type: isFinal ? 'final' : 'partial', text }));
+      if (isFinal) fs.appendFileSync(txtPath, text + '\n');
+    } catch (e) {
+      ws.send(JSON.stringify({ type: 'error', message: String(e) }));
+    }
+  });
+
+  dg.on('error', (e) => ws.send(JSON.stringify({ type: 'error', message: 'Deepgram: ' + e.message })));
+  dg.on('close', () => ws.send(JSON.stringify({ type: 'info', message: 'Deepgram closed' })));
+
+  ws.on('message', async (data) => {
+    // בינארי = אודיו webm/opus מהדפדפן; טקסט = פקודות
+    if (typeof data === 'string') {
+      try {
+        const msg = JSON.parse(data);
+        if (msg.type === 'stop') { try { dg.close(); } catch {} ws.close(); }
+      } catch {}
+      return;
+    }
+    // שמירת האודיו הגולמי לקובץ .webm
+    const buf = Buffer.from(data);
+    webmStream.write(buf);
+
+    // המרה ל-PCM16 ושליחה ל-Deepgram
+    try {
+      const pcm = await webmToPCM16(buf);
+      if (dg.readyState === dg.OPEN) dg.send(pcm);
+    } catch (e) {
+      ws.send(JSON.stringify({ type: 'error', message: 'Transcode error: ' + e.message }));
+    }
+  });
+
+  ws.on('close', () => {
+    try { webmStream.end(); } catch {}
+    try { dg.close(); } catch {}
+    console.log('🔚 session closed:', sessionId, 'files:', path.basename(webmPath), path.basename(txtPath));
+  });
+});
+
+server.listen(PORT, () => console.log(`WS server on :${PORT}`));
+
+// === PCM16 → WAV recorder ===
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname  = path.dirname(__filename);
+
+const recordingsDir = path.join(__dirname, 'recordings');
+fs.mkdirSync(recordingsDir, { recursive: true });
+
+function writeWavHeader(stream, rate=16000, ch=1, bits=16, data=0){
+  const h = Buffer.alloc(44);
+  h.write('RIFF',0);h.writeUInt32LE(36+data,4);
+  h.write('WAVEfmt ',8);h.writeUInt32LE(16,16);
+  h.writeUInt16LE(1,20);h.writeUInt16LE(ch,22);
+  h.writeUInt32LE(rate,24);h.writeUInt32LE(rate*ch*bits/8,28);
+  h.writeUInt16LE(ch*bits/8,32);h.writeUInt16LE(bits,34);
+  h.write('data',36);h.writeUInt32LE(data,40);
+  stream.write(h);
+
+wss.on('connection',(ws)=>{
+  const id='rec_'+Math.random().toString(36).slice(2,10);
+  const wav=path.join(recordingsDir,\`\${id}.wav\`);
+  const out=fs.createWriteStream(wav);
+  writeWavHeader(out);
+  let bytes=0;
+  console.log('🎧 new session',id);
+  ws.on('message',(m)=>{const b=Buffer.isBuffer(m)?m:Buffer.from(m);out.write(b);bytes+=b.length;});
+  ws.on('close',()=>{
+    out.end(()=>{const fd=fs.openSync(wav,'r+');const p=Buffer.alloc(4);
+      p.writeUInt32LE(36+bytes,0);fs.writeSync(fd,p,0,4,4);
+      p.writeUInt32LE(bytes,0);fs.writeSync(fd,p,0,4,40);
+      fs.closeSync(fd);console.log('🔚 saved',wav,bytes,'bytes');});
+  });
+});

@@ -1,8 +1,8 @@
 HTTP/1.1 200 OK
 vary: rsc, next-router-state-tree, next-router-prefetch, next-router-segment-prefetch
-content-disposition: attachment; filename="session-CHK2.tar.gz"
-content-type: application/gzip
-Date: Thu, 11 Sep 2025 15:54:32 GMT
+content-disposition: attachment; filename="report-${id}.pdf"
+content-type: application/pdf
+Date: Sun, 14 Sep 2025 19:16:12 GMT
 Connection: keep-alive
 Keep-Alive: timeout=5
 Transfer-Encoding: chunked

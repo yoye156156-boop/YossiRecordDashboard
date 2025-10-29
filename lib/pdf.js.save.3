@@ -1,0 +1,86 @@
+// lib/pdf.js — JavaScript רגיל (ESM), עובד ב-Node runtime של Next
+import fs from "node:fs/promises";
+import path from "node:path";
+import { PDFDocument } from "pdf-lib";
+import fontkit from "@pdf-lib/fontkit";
+
+const A4 = [595.28, 841.89]; // points
+const MARGIN = 40;
+
+// עוטף RTL ודואג שמספרים יוצגו LTR כדי שלא יתהפכו ב-RTL
+function rtlWrap(s) {
+  const RLE = "\u202B"; // Right-to-Left Embedding
+  const LRE = "\u202A"; // Left-to-Right Embedding
+  const PDF = "\u202C"; // Pop Directional Formatting
+  const withDigits = String(s).replace(/\d[\d:/.-]*/g, (m) => `${LRE}${m}${PDF}`);
+  return `${RLE}${withDigits}${PDF}`;
+}
+
+// בוחר פונט עברי/גנרי שמותקן במכונה או בקובץ שבפרויקט
+async function pickFont() {
+  const root = process.cwd();
+  const candidates = [
+    path.join(root, "public", "fonts", "NotoSansHebrew-Regular.ttf"), // אם הורדנו לפרויקט
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",                // קיסטנדרטי בקאלי/דביאן
+    "/usr/share/fonts/truetype/freefont/FreeSans.ttf",                // נפוץ גם כן
+  ];
+  for (const p of candidates) {
+    try {
+      const buf = await fs.readFile(p);
+      return { buf, path: p };
+    } catch {
+      // ננסה את הבא
+    }
+  }
+  throw new Error("לא נמצאה פונט עברית במערכת (בדוק DejaVuSans/FreeSans או public/fonts/NotoSansHebrew-Regular.ttf)");
+}
+
+export async function buildPdf({ id, title, date, lines = [] }) {
+  const pdfDoc = await PDFDocument.create();
+  pdfDoc.registerFontkit(fontkit);
+
+  const { buf: heFontBytes, path: heFontPath } = await pickFont();
+  const heFont = await pdfDoc.embedFont(heFontBytes, { subset: true });
+
+  const page = pdfDoc.addPage(A4);
+  const { width: w, height: h } = page.getSize();
+
+  const drawRight = (text, y, size = 14) => {
+    const t = rtlWrap(text);
+    const width = heFont.widthOfTextAtSize(t, size);
+    page.drawText(t, { x: w - MARGIN - width, y, size, font: heFont });
+  };
+
+  // כותרת
+  let y = h - MARGIN - 40;
+  drawRight(title || `דוח פגישה #${id}`, y, 32);
+  y -= 28;
+
+  // תאריך he-IL (תמיד קיים ערך)
+  const dt = new Date(date ?? Date.now());
+const digits = dt.toLocaleString("he-IL", {
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+
+const digitsRun = `\u202A${digits}\u202C`; // << עוטף ב-LRE/PDF כדי שלא יתהפך
+
+drawRight(`נוצר: ${digitsRun}`, y, 12);
+
+  // שורות תמלול
+  for (const line of Array.isArray(lines) ? lines : []) {
+    if (y < MARGIN + 40) {
+      // עמוד חדש אם נגמר מקום
+      const newPage = pdfDoc.addPage(A4);
+      y = newPage.getSize().height - MARGIN - 24;
+    }
+    drawRight(`• ${line}`, y, 16);
+    y -= 20;
+  }
+
+  const bytes = await pdfDoc.save();
+  console.log(`PDF fonts → HE: ${heFontPath}`);
+  return bytes;
+}

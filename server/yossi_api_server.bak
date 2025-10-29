@@ -1,0 +1,134 @@
+import * as fsSync from "node:fs";
+import express from "express";
+import path from "path";
+import fs from "fs/promises";
+import { fileURLToPath } from "url";
+import { exec } from "child_process";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const app = express();
+app.use(express.json());
+
+// --- static archive ---
+const ARCHIVE_DIR = path.join(__dirname, "archive");
+await fs.mkdir(ARCHIVE_DIR, { recursive: true });
+app.use("/archive", express.static(ARCHIVE_DIR));
+
+// directory index for /archive (so לא תראה "Cannot GET /archive/")
+const serveIndex = (await import("serve-index")).default;
+app.use("/archive", serveIndex(ARCHIVE_DIR, { icons: true }));
+
+// simple static dashboard (from ./public)
+app.use("/", express.static(path.join(__dirname, "public")));
+
+async function listMedia(dir) {
+  const exts = new Set([".mp4", ".mov", ".m4a", ".mp3", ".wav"]);
+  const files = await fs.readdir(dir).catch(() => []);
+  const items = [];
+  for (const name of files) {
+    const full = path.join(dir, name);
+    const st = await fs.stat(full).catch(() => null);
+    if (!st || !st.isFile()) continue;
+    const ext = path.extname(name).toLowerCase();
+    if (!exts.has(ext)) continue;
+    items.push({
+      name,
+      size: st.size,
+      mtime: st.mtimeMs,
+      url: `/archive/${encodeURIComponent(name)}`,
+    });
+  }
+  items.sort((a, b) => b.mtime - a.mtime);
+  return items;
+}
+
+// GET /api/archive
+app.get("/api/archive", async (req, res) => {
+  const items = await listMedia(ARCHIVE_DIR);
+  res.json({ items });
+});
+
+// POST /api/runYossi  body: { filePath?, dirPath?, mode?, patient?, stamp? }
+app.post("/api/runYossi", async (req, res) => {
+  const { filePath, dirPath, mode = "doc", patient = "", stamp } = req.body || {};
+  if (!filePath && !dirPath) {
+    return res.status(400).json({ ok:false, error: "missing filePath or dirPath" });
+  }
+
+  // run wrapper directly via bash (aliases לא זמינים פה)
+  const script = path.join(__dirname, "make_captions_yossi.sh");
+  const parts = [];
+  if (dirPath) parts.push("--batch", dirPath); else parts.push(filePath);
+  parts.push("--mode", mode);
+  if (patient) parts.push("--patient", patient);
+  if (stamp)   parts.push("--stamp",   stamp);
+
+  const cmd = `bash "${script}" ${parts.map(p => `"${p}"`).join(" ")}`;
+  console.log("runYossi:", cmd);
+
+  exec(cmd, { cwd: __dirname, env: process.env }, async (err, stdout, stderr) => {
+    if (err) {
+      return res.status(500).json({ ok:false, error: (stderr || err.message), stdout });
+    }
+    const items = await listMedia(ARCHIVE_DIR);
+    res.json({ ok:true, cmd, stdout, items });
+  });
+});
+// --- BEGIN: health + static outputs (no duplicate imports) ---
+
+// אם אין לך כבר app=express(), ודא שזה קיים למעלה בקובץ:
+// const app = express();
+// app.use(express.json({ limit: "50mb" }));
+
+// __dirname בסביבת ESM
+
+// תיקיית פלטים (התאם אם שמרת במקום אחר)
+const OUT_DIR = path.resolve(__dirname, "../outputs");
+
+// ודא שהתיקייה קיימת (fs/promises)
+try {
+  await fs.mkdir(OUT_DIR, { recursive: true });
+} catch (e) {
+  // מתעלמים משגיאה אם כבר קיימת
+}
+
+// הגשה סטטית: GET /outputs/<file>
+app.use("/outputs", express.static(OUT_DIR, { fallthrough: true }));
+
+// ראוט בריאות פשוט
+app.get("/health", (_req, res) => res.json({ ok: true }));
+
+// --- END ---
+
+const PORT = process.env.YOSSI_API_PORT || 3001;
+app.listen(PORT, () => {
+  console.log(`Yossi API listening on http://localhost:${PORT}`);
+  console.log(`Archive index:      http://localhost:${PORT}/archive/`);
+  console.log(`Dashboard:          http://localhost:${PORT}/`);
+});
+app.listen(PORT, "0.0.0.0", () => console.log("listening on", PORT));
+
+// ---- Added by setup ----
+
+// ודא שיש לך app (Express) ו-json middleware למעלה; אם אין:
+// import express from "express";
+// const app = express();
+// app.use(express.json({ limit: "50mb" }));
+
+// תיקיית הפלטים (התאם אם אתה שומר במקום אחר)
+
+// שרת סטטי לפלטים: GET /outputs/<file>
+if (!fsSync.existsSync(OUT_DIR)) fs.mkdirSync(OUT_DIR, { recursive: true });
+app.use("/outputs", (await import("express")).default.static(OUT_DIR, { fallthrough: true }));
+
+// בריאות בסיסי
+app.get("/health", (_req, res) => res.json({ ok: true }));
+
+// ודא שמאזינים החוצה (ב-VM צריך 0.0.0.0 כדי לגשת מהדפדפן של Windows)
+if (!globalThis.__LISTENING__) {
+  app.listen(PORT, "0.0.0.0", () => console.log("listening on", PORT));
+  globalThis.__LISTENING__ = true;
+}
+// ---- end Added ----

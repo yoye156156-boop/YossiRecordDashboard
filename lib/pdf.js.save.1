@@ -1,0 +1,119 @@
+// מסירים תווי bidi/בקרה + ממירים כל סוגי הרווחים לרווח רגיל,
+// ואז מוחקים כל תו שלא ברשימת-לבנה (אותיות עבריות/לטיניות, ספרות וסימני פיסוק שכיחים)
+const CTRL_RE = /[\u200E\u200F\u202A-\u202E\u2066-\u2069\u061C\uFEFF\u200B-\u200D\u2060\u00AD]/g; // בקרה/אפס-רוחב
+const SPACE_VARIANTS_RE = /[\u00A0\u202F\u2000-\u200A\u205F\u3000]/g; // כל סוגי "רווחים מיוחדים"
+const ALLOWED_CHARS_RE = /[^\p{Script=Hebrew}A-Za-z0-9 \-–—_,.:;\/\\#(){}\[\]"'!?@+*=<>%&₪$€£|~]/gu;
+
+const sanitize = (s) =>
+  String(s ?? '')
+    .replace(CTRL_RE, '')
+    .replace(SPACE_VARIANTS_RE, ' ')
+    .replace(ALLOWED_CHARS_RE, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+import { PDFDocument } from 'pdf-lib'
+import fontkit from '@pdf-lib/fontkit'
+import fs from 'node:fs/promises'
+import path from 'node:path'
+
+// מסירים תווי bidi/בקרה/רווחים “אפס רוחב” ועוד, ואז גם trim
+const CTRL_RE =
+  /[\u200E\u200F\u202A-\u202E\u2066-\u2069\u061C\uFEFF\u200B-\u200D\u2060\u00AD\u202F]/g
+const sanitize = (s) => String(s ?? '').replace(CTRL_RE, '').trim()
+
+// קורא את הקובץ הראשון שקיים מתוך רשימת מועמדים
+async function readFirstExisting(paths) {
+  for (const p of paths) {
+    try { return { path: p, bytes: await fs.readFile(p) } } catch {}
+  }
+  return null
+}
+
+export async function buildPdf({ id, title, date, lines }) {
+  const pdfDoc = await PDFDocument.create()
+  pdfDoc.registerFontkit(fontkit)
+
+  const root = process.cwd()
+
+  // עברית (קודם פרויקט, אח"כ מערכת)
+  const heCandidates = [
+    path.join(root, 'public/fonts/NotoSansHebrew-Regular.ttf'),
+    '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+    '/usr/share/fonts/truetype/freefont/FreeSans.ttf',
+  ]
+  // לטיני/ספרות לתאריך
+  const latCandidates = [
+    path.join(root, 'public/fonts/NotoSans-Regular.ttf'),
+    '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+    '/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf',
+    '/usr/share/fonts/truetype/freefont/FreeSans.ttf',
+  ]
+
+  const heFound  = await readFirstExisting(heCandidates)
+  const latFound = await readFirstExisting(latCandidates)
+  if (!heFound && !latFound) {
+    throw new Error('No usable TTF fonts found. Install a Hebrew-capable TTF or place fonts in public/fonts/')
+  }
+
+  console.log('PDF fonts → HE:', heFound?.path, '| LAT:', latFound?.path)
+
+  const heFont  = await pdfDoc.embedFont((heFound ?? latFound).bytes, { subset: true })
+  const latFont = await pdfDoc.embedFont((latFound ?? heFound).bytes, { subset: true })
+
+  // עמוד A4
+  const PAGE_W = 595.28, PAGE_H = 841.89
+  let page = pdfDoc.addPage([PAGE_W, PAGE_H])
+  const margin = 50
+
+  // מיושר לימין בגופן “עברית” (אחרי sanitize)
+  function drawRightAlignedHE(text, y, size = 12) {
+    const logical = sanitize(text)
+    const w = heFont.widthOfTextAtSize(logical, size)
+    page.drawText(logical, { x: PAGE_W - margin - w, y, size, font: heFont })
+  }
+
+  // "נוצר: <תאריך>" — תגית בעברית + תאריך בגופן לטיני, שניהם לאחר sanitize
+  function drawDateLine(y, size = 12, createdStr) {
+    const label = sanitize('נוצר:')
+    const tail  = sanitize(createdStr)
+
+    const wLabel = heFont.widthOfTextAtSize(label, size)
+    const wSpace = heFont.widthOfTextAtSize(' ',   size)
+    const wTail  = latFont.widthOfTextAtSize(tail, size)
+
+    const total = wLabel + wSpace + wTail
+    let x = PAGE_W - margin - total
+
+    page.drawText(label, { x, y, size, font: heFont }); x += wLabel
+    page.drawText(' ',   { x, y, size, font: heFont }); x += wSpace
+    page.drawText(tail,  { x, y, size, font: latFont })
+  }
+
+  const created = formatHeDate(date || Date.now())
+
+  // כותרת + תאריך
+  let y = PAGE_H - margin - 24
+  drawRightAlignedHE(title || `דוח פגישה #${id}`, y, 20); y -= 28
+  drawDateLine(y, 12, created); y -= 20
+
+  // שורות התמלול
+  for (const line of (lines || []).map(sanitize)) {
+    drawRightAlignedHE(line, y, 12)
+    y -= 16
+    if (y < margin + 40) {
+      page = pdfDoc.addPage([PAGE_W, PAGE_H])
+      y = PAGE_H - margin - 24
+    }
+  }
+
+  return await pdfDoc.save()
+}
+
+function formatHeDate(input) {
+  try {
+    const dt = new Date(input)
+    return new Intl.DateTimeFormat('he-IL', { dateStyle: 'short', timeStyle: 'short' }).format(dt)
+  } catch {
+    return new Date().toLocaleString('he-IL')
+  }
+}

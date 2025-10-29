@@ -1,0 +1,25 @@
+<!doctype html><meta charset="utf-8">
+<button id="start">Start</button> <button id="stop" disabled>Stop</button>
+<pre id="out"></pre>
+<script>
+let ws, mr, partialIndex=null, lines=[];
+const out = document.getElementById('out');
+document.getElementById('start').onclick = async () => {
+  const stream = await navigator.mediaDevices.getUserMedia({audio:true});
+  mr = new MediaRecorder(stream, {mimeType:'audio/webm;codecs=opus', audioBitsPerSecond:32000});
+  ws = new WebSocket(`ws://${location.hostname}:8787/realtime?provider=deepgram`);
+  ws.onmessage = (e)=>{
+    const m = JSON.parse(e.data);
+    if(m.type==='partial'){ if(partialIndex==null){ lines.push(m.text); partialIndex=lines.length-1;} else {lines[partialIndex]=m.text;} }
+    if(m.type==='final'){ if(partialIndex==null){ lines.push(m.text);} else {lines[partialIndex]=m.text; partialIndex=null;} }
+    out.textContent = lines.join('\n');
+  };
+  mr.ondataavailable = (ev)=>{ if(ev.data && ev.data.size>0 && ws.readyState===1){ ev.data.arrayBuffer().then(b=>ws.send(b)); } };
+  mr.start(250);
+  this.disabled=true; document.getElementById('stop').disabled=false;
+};
+document.getElementById('stop').onclick = ()=>{
+  mr && mr.stop(); ws && ws.send(JSON.stringify({type:'stop'})); ws && ws.close();
+  this.disabled=true;
+};
+</script>
