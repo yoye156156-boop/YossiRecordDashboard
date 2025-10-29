@@ -12,5 +12,6 @@
     "mime": "^4.1.0",
     "multer": "^2.0.2",
     "serve-index": "^1.9.1"
-  }
+  },
+  "main": "server.js"
 }
