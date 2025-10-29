@@ -3,7 +3,9 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "menu": "node tools/menu.mjs"
+    "menu": "node tools/menu.mjs",
+    "build:client": "npm --prefix dashboard ci && npm --prefix dashboard run build",
+    "start": "node server.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
