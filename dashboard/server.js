@@ -5,6 +5,17 @@ import fs from "fs";
 try {
   const testPath = process.env.RECORDINGS_DIR || "/data/recordings";
   fs.mkdirSync(testPath, { recursive: true });
+// --- Volume write-check on boot ---
+try {
+  const testDir = process.env.RECORDINGS_DIR || "/data/recordings";
+  fs.mkdirSync(testDir, { recursive: true }); // יצירת תיקייה אם לא קיימת
+  const testFile = path.join(testDir, "_volume_check.txt");
+  fs.writeFileSync(testFile, "✅ Volume writable at " + new Date().toISOString());
+  console.log("✅ Volume check: created", testFile);
+} catch (err) {
+  console.error("❌ Volume check failed:", err.code || err.message);
+}
+
   const testFile = `${testPath}/_volume_check.txt`;
   fs.writeFileSync(testFile, "✅ Volume is writable " + new Date().toISOString());
   console.log("✅ Volume check: created test file at", testFile);
