@@ -1,6 +1,16 @@
 import express from "express";
 import cors from "cors";
 import fs from "fs";
+// בדיקה שה-volume מחובר וניתן לכתיבה
+try {
+  const testPath = process.env.RECORDINGS_DIR || "/data/recordings";
+  fs.mkdirSync(testPath, { recursive: true });
+  const testFile = `${testPath}/_volume_check.txt`;
+  fs.writeFileSync(testFile, "✅ Volume is writable " + new Date().toISOString());
+  console.log("✅ Volume check: created test file at", testFile);
+} catch (err) {
+  console.error("❌ Volume check failed:", err.message);
+}
 import path from "path";
 import dotenv from "dotenv";
 dotenv.config();
