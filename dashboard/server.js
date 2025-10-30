@@ -70,6 +70,17 @@ app.delete("/api/recordings/:name", (req, res) => {
     res.status(500).json({ error: e.code || "Delete failed" });
   }
 });
+app.get("/api/health", (req, res) => {
+  const dir = process.env.RECORDINGS_DIR || "/data/recordings";
+  let ok = true, msg = "ok";
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    fs.accessSync(dir, fs.constants.W_OK);
+  } catch (e) {
+    ok = false; msg = e.code || e.message;
+  }
+  res.json({ ok, dir, time: new Date().toISOString() });
+});
 
 app.listen(PORT, () => {
   console.log(`Server on ${PORT}`);
