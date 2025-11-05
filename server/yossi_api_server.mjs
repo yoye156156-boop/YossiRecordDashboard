@@ -52,34 +52,51 @@ app.get("/api/archive", async (req, res) => {
 
 // POST /api/runYossi  body: { filePath?, dirPath?, mode?, patient?, stamp? }
 app.post("/api/runYossi", async (req, res) => {
-  const { filePath, dirPath, mode = "doc", patient = "", stamp } = req.body || {};
+  const {
+    filePath,
+    dirPath,
+    mode = "doc",
+    patient = "",
+    stamp,
+  } = req.body || {};
   if (!filePath && !dirPath) {
-    return res.status(400).json({ ok:false, error: "missing filePath or dirPath" });
+    return res
+      .status(400)
+      .json({ ok: false, error: "missing filePath or dirPath" });
   }
 
   // run wrapper directly via bash (aliases לא זמינים פה)
   const script = path.join(__dirname, "make_captions_yossi.sh");
   const parts = [];
-  if (dirPath) parts.push("--batch", dirPath); else parts.push(filePath);
+  if (dirPath) parts.push("--batch", dirPath);
+  else parts.push(filePath);
   parts.push("--mode", mode);
   if (patient) parts.push("--patient", patient);
-  if (stamp)   parts.push("--stamp",   stamp);
+  if (stamp) parts.push("--stamp", stamp);
 
-  const cmd = `bash "${script}" ${parts.map(p => `"${p}"`).join(" ")}`;
+  const cmd = `bash "${script}" ${parts.map((p) => `"${p}"`).join(" ")}`;
   console.log("runYossi:", cmd);
 
-  exec(cmd, { cwd: __dirname, env: process.env }, async (err, stdout, stderr) => {
-    if (err) {
-      return res.status(500).json({ ok:false, error: (stderr || err.message), stdout });
-    }
-    const items = await listMedia(ARCHIVE_DIR);
-    res.json({ ok:true, cmd, stdout, items });
-  });
+  exec(
+    cmd,
+    { cwd: __dirname, env: process.env },
+    async (err, stdout, stderr) => {
+      if (err) {
+        return res
+          .status(500)
+          .json({ ok: false, error: stderr || err.message, stdout });
+      }
+      const items = await listMedia(ARCHIVE_DIR);
+      res.json({ ok: true, cmd, stdout, items });
+    },
+  );
 });
 
 // ---- outputs + health (clean single block) ----
 const OUT_DIR = path.resolve(__dirname, "../outputs");
-try { await fs.mkdir(OUT_DIR, { recursive: true }); } catch {}
+try {
+  await fs.mkdir(OUT_DIR, { recursive: true });
+} catch {}
 
 app.use("/outputs", express.static(OUT_DIR));
 app.get("/health", (_req, res) => res.json({ ok: true }));
@@ -103,7 +120,11 @@ app.get("/recordings", (_req, res) => {
         const full = path.resolve(dir, e.name);
         if (e.isDirectory()) {
           walk(full);
-        } else if (/\.(wav|mp3|m4a|ogg|oga|opus|flac|aac|m4b|aif|aiff|wma|alac)$/i.test(e.name)) {
+        } else if (
+          /\.(wav|mp3|m4a|ogg|oga|opus|flac|aac|m4b|aif|aiff|wma|alac)$/i.test(
+            e.name,
+          )
+        ) {
           const st = fss.statSync(full);
           out.push({
             name: e.name,
@@ -122,4 +143,3 @@ app.get("/recordings", (_req, res) => {
   }
 });
 /* --- end recordings route --- */
-

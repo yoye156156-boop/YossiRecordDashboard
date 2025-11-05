@@ -8,7 +8,10 @@ export function rateLimit(key: string, rate = 10, perMs = 60_000) {
   const elapsed = now - b.updated;
   b.tokens = Math.min(rate, b.tokens + elapsed * (rate / perMs));
   b.updated = now;
-  if (b.tokens < 1) { buckets.set(key, b); return false; }
+  if (b.tokens < 1) {
+    buckets.set(key, b);
+    return false;
+  }
   b.tokens -= 1;
   buckets.set(key, b);
   return true;

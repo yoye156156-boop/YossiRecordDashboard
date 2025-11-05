@@ -6,18 +6,29 @@ import {
   HeadingLevel,
   AlignmentType,
   LevelFormat,
-} from 'docx';
+} from "docx";
 
 /** מחזיר Buffer של DOCX מוכן לכתיבה לדיסק/החזרה מה-API */
-export async function buildDocxBuffer(title: string, lines: string[], date?: string): Promise<Buffer> {
-  const dateLine = date ?? new Date().toLocaleString('he-IL');
+export async function buildDocxBuffer(
+  title: string,
+  lines: string[],
+  date?: string,
+): Promise<Buffer> {
+  const dateLine = date ?? new Date().toLocaleString("he-IL");
 
   const doc = new Document({
     numbering: {
       config: [
         {
-          reference: 'bullets',
-          levels: [{ level: 0, format: LevelFormat.BULLET, text: '•', alignment: AlignmentType.RIGHT }],
+          reference: "bullets",
+          levels: [
+            {
+              level: 0,
+              format: LevelFormat.BULLET,
+              text: "•",
+              alignment: AlignmentType.RIGHT,
+            },
+          ],
         },
       ],
     },
@@ -41,9 +52,9 @@ export async function buildDocxBuffer(title: string, lines: string[], date?: str
               new Paragraph({
                 bidirectional: true,
                 alignment: AlignmentType.RIGHT,
-                numbering: { reference: 'bullets', level: 0 },
+                numbering: { reference: "bullets", level: 0 },
                 children: [new TextRun(l)],
-              })
+              }),
           ),
         ],
       },

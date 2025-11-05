@@ -44,3 +44,6 @@ next-env.d.ts
 *.pdf
 report-*.pdf
 smoke.pdf
+recordings/
+node_modules/
+dashboard/dist/

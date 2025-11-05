@@ -1,0 +1,57 @@
+async function refresh() {
+  setLoading(true);
+  setErrorMsg(null);
+  try {
+    const res = await fetch(`${API}/api/recordings`);
+    if (!res.ok) throw new Error(`API ${res.status}`);
+
+    const data = await res.json();
+
+    // נזהה את המערך הנכון גם אם עטוף במפתח אחר
+    const list =
+      Array.isArray(data)
+        ? data
+        : data.files || data.items || data.recordings || data.data || data.result || [];
+
+    if (!Array.isArray(list)) {
+      throw new Error("פורמט API לא נתמך (לא התקבל מערך)");
+    }
+
+    // נרמול כל פריט
+    const norm = list.map((r) => {
+      if (typeof r === "string") {
+        return { name: r, size: 0, mime: "", mtime: null };
+      }
+      const name =
+        r.name ||
+        r.filename ||
+        r.file ||
+        (r.path ? String(r.path).split("/").pop() : "") ||
+        "";
+
+      const size =
+        r.size ??
+        r.sizeBytes ??
+        (typeof r.kb === "number" ? r.kb * 1024 : 0);
+
+      const mtimeRaw = r.mtime ?? r.mtimeMs ?? r.modified ?? r.updatedAt ?? null;
+      const mtime =
+        typeof mtimeRaw === "number"
+          ? mtimeRaw
+          : typeof mtimeRaw === "string"
+          ? Date.parse(mtimeRaw) || null
+          : null;
+
+      const mime = r.mime ?? r.type ?? "";
+
+      return { name, size, mime, mtime };
+    });
+
+    setItems(norm.sort((a, b) => (b.mtime ?? 0) - (a.mtime ?? 0)));
+  } catch (e) {
+    setErrorMsg(e.message || "שגיאת רשת");
+    setItems([]);
+  } finally {
+    setLoading(false);
+  }
+}

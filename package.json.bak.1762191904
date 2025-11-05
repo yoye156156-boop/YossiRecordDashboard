@@ -1,0 +1,50 @@
+{
+  "name": "yossi-record-dashboard-root",
+  "private": true,
+  "scripts": {
+    "api": "node server.js",
+    "api:watch": "nodemon server.js",
+    "web": "cd dashboard && VITE_API_URL=http://localhost:3001 vite --host --port 5173",
+    "web:build": "cd dashboard && VITE_API_URL=http://localhost:3001 vite build",
+    "web:preview": "cd dashboard && VITE_API_URL=http://localhost:3001 vite preview --host 127.0.0.1 --port 5174",
+    "dev": "concurrently -n API,WEB -c green,cyan \"node server.cjs\" \"cd dashboard && vite --host --port 5173\"",
+    "preview:all": "concurrently -n API,PREV -c green,magenta \"node server.js\" \"cd dashboard && VITE_API_URL=http://localhost:3001 npx vite preview --host 127.0.0.1 --port 5174\"",
+    "build": "vite build",
+    "preview": "vite preview",
+    "dev:all": "concurrently -n API,WEB -c green,cyan \"node server.cjs\" \"cd dashboard && vite --host --port 5173\"",
+    "smoke": "bash scripts/smoke.sh",
+    "lint": "eslint .",
+    "format": "prettier -w .",
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1",
+    "eslint": "^9.39.0",
+    "husky": "^9.1.7",
+    "kill-port": "^2.0.1",
+    "lint-staged": "^16.2.6",
+    "nodemon": "^3.1.0",
+    "prettier": "^3.6.2"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^5.1.0",
+    "morgan": "^1.10.1",
+    "multer": "^2.0.2"
+  },
+  "type": "module",
+  "lint-staged": {
+    "*.{js,jsx,cjs,ts,tsx}": [
+      "eslint --fix",
+      "prettier -w"
+    ],
+    "*.json": [
+      "prettier -w"
+    ]
+  }
+}
+,
+  "scripts": {
+    "smoke": "bash scripts/smoke.sh"
+  }

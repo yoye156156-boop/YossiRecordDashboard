@@ -1,99 +1,167 @@
-import express from "express";
-import cors from "cors";
-import fs from "fs";
-import path from "path";
-import dotenv from "dotenv";
-import multer from "multer";
-import mime from "mime";
-
-dotenv.config();
+require("dotenv").config();
+const express = require("express");
+const cors = require("cors");
+const fs = require("fs");
+const fsp = fs.promises;
+const path = require("path");
+const multer = require("multer");
 
 const app = express();
-const PORT = process.env.PORT || 3001;
-
-const DEFAULT_DIR = path.join(process.cwd(), "recordings");
-const RECORDINGS_DIR = process.env.RECORDINGS_DIR || DEFAULT_DIR;
-
-// וידוא תיקיית יעד
-if (!fs.existsSync(RECORDINGS_DIR)) fs.mkdirSync(RECORDINGS_DIR, { recursive: true });
-
+app.use(cors());
 app.use(express.json());
 
-// אם תפרוס לקליינט נפרד—שאיר CORS. אם הכל מאותו דומיין, אפשר לכבות.
-app.use(cors());
+const PORT = process.env.PORT || 3001;
+const ROOT = __dirname;
+const RECORDINGS_DIR = path.join(ROOT, "recordings");
 
-// ===== Static for direct open =====
-app.use("/recordings", express.static(RECORDINGS_DIR));
-
-// ===== List =====
-app.get("/api/recordings", (req, res) => {
-  try {
-    const files = fs.readdirSync(RECORDINGS_DIR, { withFileTypes: true })
-      .filter((d) => d.isFile())
-      .map((d) => {
-        const fp = path.join(RECORDINGS_DIR, d.name);
-        const st = fs.statSync(fp);
-        return { name: d.name, size: st.size, mtimeMs: st.mtimeMs };
-      });
-    res.json(files);
-  } catch (e) { console.error(e); res.status(500).json({ error: "Failed to read recordings" }); }
-});
-
-// ===== Download =====
-app.get("/api/download/:name", (req, res) => {
-  const safe = path.basename(req.params.name);
-  const fp = path.join(RECORDINGS_DIR, safe);
-  if (fs.existsSync(fp) && fs.statSync(fp).isFile()) return res.download(fp, safe);
-  res.status(404).json({ error: "File not found" });
-});
-
-// ===== Delete =====
-app.delete("/api/recordings/:name", (req, res) => {
-  const safe = path.basename(req.params.name);
-  const fp = path.join(RECORDINGS_DIR, safe);
-  try {
-    if (fs.existsSync(fp) && fs.statSync(fp).isFile()) {
-      fs.rmSync(fp, { force: false });
-      return res.json({ ok: true });
-    }
-    res.status(404).json({ error: "File not found" });
-  } catch (e) { console.error(e); res.status(500).json({ error: e.code || "Delete failed" }); }
-});
-
-// ===== Upload (with multer) =====
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, RECORDINGS_DIR),
-  filename: (req, file, cb) => {
-    const ext = mime.getExtension(file.mimetype) || (path.extname(file.originalname).slice(1) || "bin");
-    const base = path.basename(file.originalname, path.extname(file.originalname));
-    cb(null, `${base}${path.extname(file.originalname) || "." + ext}`);
-  },
-});
-const upload = multer({
-  storage,
-  // (רשות) הגבלת MIME רק לאודיו/וידאו:
-  fileFilter: (req, file, cb) => {
-    if (/^audio\/|^video\//.test(file.mimetype)) cb(null, true);
-    else cb(new Error("Invalid file type (only audio/video)"));
-  },
-});
-app.post("/api/upload", upload.single("file"), (req, res) => {
-  res.json({ ok: true, name: req.file.filename });
-});
-
-// ===== Serve React build in production =====
-const clientDist = path.join(process.cwd(), "dashboard", "dist");
-if (fs.existsSync(clientDist)) {
-  app.use(express.static(clientDist));
-  app.get("/", (req, res) => res.sendFile(path.join(clientDist, "index.html")));
-  // למקרה של SPA ראוטים:
-  app.get(/^(?!\/api\/|\/recordings\/).+/, (req, res) =>
-    res.sendFile(path.join(clientDist, "index.html"))
-  );
+if (!fs.existsSync(RECORDINGS_DIR)) {
+  fs.mkdirSync(RECORDINGS_DIR, { recursive: true });
+  fs.writeFileSync(path.join(RECORDINGS_DIR, "_volume_check.txt"), "ok");
+  console.log("✅ Volume check: created recordings/_volume_check.txt");
 }
 
+const ALLOWED_EXTS = new Set([
+  ".webm",
+  ".weba",
+  ".ogg",
+  ".wav",
+  ".mp3",
+  ".txt",
+]);
+const detectMime = (ext) =>
+  ({
+    ".webm": "audio/webm",
+    ".weba": "audio/webm",
+    ".ogg": "audio/ogg",
+    ".wav": "audio/wav",
+    ".mp3": "audio/mpeg",
+    ".txt": "text/plain",
+  })[ext] || "application/octet-stream";
+
+const isSafeName = (name) => {
+  if (!name || typeof name !== "string") return false;
+  if (name.includes("..") || name.includes("/") || name.includes("\\"))
+    return false;
+  if (name.trim() === "") return false;
+  return true;
+};
+
+// -------- list recordings (with mtime) ----------
+app.get("/api/recordings", async (_req, res) => {
+  try {
+    const files = await fsp.readdir(RECORDINGS_DIR);
+    const rows = [];
+    for (const name of files) {
+      const full = path.join(RECORDINGS_DIR, name);
+      const st = await fsp.stat(full);
+      if (!st.isFile()) continue;
+      const ext = path.extname(name).toLowerCase();
+      rows.push({
+        name,
+        sizeKB: Math.round(st.size / 1024),
+        ext,
+        mime: detectMime(ext),
+        mtime: st.mtimeMs, // מספר מ״ש
+        mtimeISO: st.mtime.toISOString(), // ISO מלא
+      });
+    }
+    // ממיינים מהחדש לישן
+    rows.sort((a, b) => b.mtime - a.mtime);
+    res.json({ ok: true, items: rows });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ ok: false, error: "LIST_FAILED" });
+  }
+});
+
+// -------- stream single file ----------
+app.get("/recordings/:name", async (req, res) => {
+  try {
+    const { name } = req.params;
+    if (!isSafeName(name)) return res.status(400).end();
+    const full = path.join(RECORDINGS_DIR, name);
+    if (!fs.existsSync(full)) return res.status(404).end();
+    res.sendFile(full);
+  } catch {
+    res.status(500).end();
+  }
+});
+
+// -------- delete ----------
+app.delete("/api/recordings/:name", async (req, res) => {
+  try {
+    const { name } = req.params;
+    if (!isSafeName(name))
+      return res.status(400).json({ ok: false, error: "BAD_NAME" });
+    const full = path.join(RECORDINGS_DIR, name);
+    if (!fs.existsSync(full))
+      return res.status(404).json({ ok: false, error: "NOT_FOUND" });
+    await fsp.rm(full);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ ok: false, error: "DELETE_FAILED" });
+  }
+});
+
+// -------- upload ----------
+const storage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, RECORDINGS_DIR),
+  filename: (_req, file, cb) =>
+    cb(null, file.originalname || `upload-${Date.now()}`),
+});
+const upload = multer({ storage });
+app.post("/api/upload", upload.single("file"), (req, res) => {
+  if (!req.file) return res.status(400).json({ ok: false, error: "NO_FILE" });
+  return res.json({ ok: true, name: req.file.filename });
+});
+
+// -------- rename ----------
+app.post("/api/rename", async (req, res) => {
+  try {
+    const { oldName, newName } = req.body || {};
+    if (!isSafeName(oldName) || !isSafeName(newName)) {
+      return res.status(400).json({ ok: false, error: "BAD_NAME" });
+    }
+    const oldExt = path.extname(oldName).toLowerCase();
+    const newExt = path.extname(newName).toLowerCase();
+    if (!ALLOWED_EXTS.has(oldExt) || !ALLOWED_EXTS.has(newExt)) {
+      return res.status(400).json({ ok: false, error: "BAD_EXT" });
+    }
+    const oldFull = path.join(RECORDINGS_DIR, oldName);
+    const newFull = path.join(RECORDINGS_DIR, newName);
+    if (!fs.existsSync(oldFull))
+      return res.status(404).json({ ok: false, error: "NOT_FOUND" });
+    if (fs.existsSync(newFull))
+      return res.status(409).json({ ok: false, error: "ALREADY_EXISTS" });
+    await fsp.rename(oldFull, newFull);
+    res.json({ ok: true, name: newName });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ ok: false, error: "RENAME_FAILED" });
+  }
+});
+
 app.listen(PORT, () => {
-  console.log(`Server on ${PORT}`);
-  console.log("RECORDINGS_DIR =", RECORDINGS_DIR);
-  console.log("Client dist exists?", fs.existsSync(clientDist));
+  console.log(`🚀 Server running on port ${PORT}`);
+});
+// PUT /api/recordings/:oldName  { newName }
+app.put('/api/recordings/:oldName', (req, res) => {
+  const oldName = req.params.oldName;
+  const { newName } = req.body || {};
+  if (!oldName || !newName) return res.status(400).json({ ok: false, error: 'missing names' });
+
+  const oldPath = path.join(RECORDINGS_DIR, oldName);
+  const newPath = path.join(RECORDINGS_DIR, newName);
+
+  if (!fs.existsSync(oldPath)) return res.status(404).json({ ok: false, error: 'not found' });
+  if (fs.existsSync(newPath)) return res.status(409).json({ ok: false, error: 'exists' });
+
+  try {
+    fs.renameSync(oldPath, newPath);
+    return res.json({ ok: true, name: newName });
+  } catch (e) {
+    console.error('rename error', e);
+    return res.status(500).json({ ok: false, error: 'rename failed' });
+  }
 });

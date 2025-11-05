@@ -12,7 +12,10 @@ export type ReportInput = {
 
 function isLikelyTTForOTF(bytes: Uint8Array): boolean {
   if (!bytes || bytes.length < 10240) return false;
-  const a = bytes[0], b = bytes[1], c = bytes[2], d = bytes[3];
+  const a = bytes[0],
+    b = bytes[1],
+    c = bytes[2],
+    d = bytes[3];
   const isTTF = a === 0x00 && b === 0x01 && c === 0x00 && d === 0x00;
   const isOTTO = a === 0x4f && b === 0x54 && c === 0x54 && d === 0x4f;
   const isTRUE = a === 0x74 && b === 0x72 && c === 0x75 && d === 0x65;
@@ -40,17 +43,28 @@ async function loadHebrewFont(): Promise<Uint8Array | null> {
 // Basic RTL: if a line is Hebrew-dominant, reverse only Hebrew runs; keep Latin/digits intact
 function reorderRTL(text: string): string {
   const hasHeb = (s: string) => /[\u0590-\u05FF]/.test(s);
-  return text.split("\n").map((line) => {
-    const hebCount = (line.match(/[\u0590-\u05FF]/g) || []).length;
-    const latCount = (line.match(/[A-Za-z0-9]/g) || []).length;
-    if (hebCount <= latCount) return line;
-    const runs = line.match(/([\u0590-\u05FF]+|[A-Za-z0-9]+|[^\u0590-\u05FFA-Za-z0-9]+)/g) || [line];
-    runs.reverse();
-    return runs.map((r) => (hasHeb(r) ? r.split("").reverse().join("") : r)).join("");
-  }).join("\n");
+  return text
+    .split("\n")
+    .map((line) => {
+      const hebCount = (line.match(/[\u0590-\u05FF]/g) || []).length;
+      const latCount = (line.match(/[A-Za-z0-9]/g) || []).length;
+      if (hebCount <= latCount) return line;
+      const runs = line.match(
+        /([\u0590-\u05FF]+|[A-Za-z0-9]+|[^\u0590-\u05FFA-Za-z0-9]+)/g,
+      ) || [line];
+      runs.reverse();
+      return runs
+        .map((r) => (hasHeb(r) ? r.split("").reverse().join("") : r))
+        .join("");
+    })
+    .join("\n");
 }
 
-export async function buildPdf({ title, date, lines }: ReportInput): Promise<Uint8Array> {
+export async function buildPdf({
+  title,
+  date,
+  lines,
+}: ReportInput): Promise<Uint8Array> {
   const safeLines = Array.isArray(lines) ? lines : [];
 
   const pdfDoc = await PDFDocument.create();
@@ -61,7 +75,9 @@ export async function buildPdf({ title, date, lines }: ReportInput): Promise<Uin
 
   const hebrewFontBytes = await loadHebrewFont();
   const helvetica = await pdfDoc.embedFont(StandardFonts.Helvetica);
-  const font = hebrewFontBytes ? await pdfDoc.embedFont(hebrewFontBytes, { subset: true }) : helvetica;
+  const font = hebrewFontBytes
+    ? await pdfDoc.embedFont(hebrewFontBytes, { subset: true })
+    : helvetica;
 
   const margin = 48;
   const titleSize = 20;

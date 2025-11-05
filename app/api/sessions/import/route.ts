@@ -1,9 +1,11 @@
-import { NextResponse } from 'next/server';
-import { importSessions } from '@/lib/sessions.js';
+import { NextResponse } from "next/server";
+import { importSessions } from "@/lib/sessions.js";
 
-export const runtime = 'nodejs';
+export const runtime = "nodejs";
 
-type ImportPayload = { sessions?: Array<{ id?: string; at?: string; lines?: string[] }> } | Array<{ id?: string; at?: string; lines?: string[] }>;
+type ImportPayload =
+  | { sessions?: Array<{ id?: string; at?: string; lines?: string[] }> }
+  | Array<{ id?: string; at?: string; lines?: string[] }>;
 
 export async function POST(req: Request) {
   try {
@@ -11,6 +13,9 @@ export async function POST(req: Request) {
     const stats = importSessions(raw as ImportPayload);
     return NextResponse.json({ ok: true, ...stats });
   } catch (e) {
-    return NextResponse.json({ ok: false, error: (e as Error).message }, { status: 400 });
+    return NextResponse.json(
+      { ok: false, error: (e as Error).message },
+      { status: 400 },
+    );
   }
 }

@@ -1,10 +1,11 @@
-import test from 'node:test';
-import assert from 'node:assert/strict';
-import { startMockHebrewStream } from '../lib/mockStream.js';
+/* eslint-env node, jest */
+import test from "node:test";
+import assert from "node:assert/strict";
+import { startMockHebrewStream } from "../lib/mockStream.js";
 
-const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-test('mock stream emits periodically and stops on abort', async () => {
+test("mock stream emits periodically and stops on abort", async () => {
   const ac = new AbortController();
   let count = 0;
 
@@ -12,7 +13,9 @@ test('mock stream emits periodically and stops on abort', async () => {
   const cleanup = startMockHebrewStream({
     intervalMs: 1,
     signal: ac.signal,
-    onLine: () => { count++; },
+    onLine: () => {
+      count++;
+    },
   });
 
   // ניתן קצת זמן לפליטות
@@ -26,5 +29,5 @@ test('mock stream emits periodically and stops on abort', async () => {
   await sleep(8);
 
   // לא אמור להשתנות אחרי עצירה
-  assert.equal(count, after, 'no emissions after stop/abort');
+  assert.equal(count, after, "no emissions after stop/abort");
 });

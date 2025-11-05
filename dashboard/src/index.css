@@ -1,1 +1,18 @@
 @import "tailwindcss";
+:root {
+  font-feature-settings: "ss01" on;
+}
+html,
+body,
+#root {
+  height: 100%;
+}
+body {
+  margin: 0;
+  font-family:
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    Roboto,
+    sans-serif;
+}

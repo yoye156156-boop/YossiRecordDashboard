@@ -1,7 +1,7 @@
-import { NextResponse } from 'next/server';
-import { loadSessions, clearSessions, saveSession } from '@/lib/sessions.js';
+import { NextResponse } from "next/server";
+import { loadSessions, clearSessions, saveSession } from "@/lib/sessions.js";
 
-export const runtime = 'nodejs';
+export const runtime = "nodejs";
 
 export async function GET() {
   try {
@@ -17,24 +17,25 @@ export async function POST(req: Request) {
     const b = (raw ?? {}) as { id?: unknown; at?: unknown; lines?: unknown };
 
     const id =
-      typeof b.id === 'string' && b.id.trim()
-        ? b.id
-        : Date.now().toString();
+      typeof b.id === "string" && b.id.trim() ? b.id : Date.now().toString();
 
     const at =
-      typeof b.at === 'string' && !Number.isNaN(Date.parse(b.at))
+      typeof b.at === "string" && !Number.isNaN(Date.parse(b.at))
         ? b.at
         : new Date().toISOString();
 
     const lines: string[] =
-      Array.isArray(b.lines) && b.lines.every((x) => typeof x === 'string')
+      Array.isArray(b.lines) && b.lines.every((x) => typeof x === "string")
         ? (b.lines as string[])
         : [];
 
     const saved = saveSession({ id, at, lines });
     return NextResponse.json({ ok: true, saved });
   } catch (e) {
-    return NextResponse.json({ ok: false, error: (e as Error).message }, { status: 400 });
+    return NextResponse.json(
+      { ok: false, error: (e as Error).message },
+      { status: 400 },
+    );
   }
 }
 

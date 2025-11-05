@@ -1,5 +1,5 @@
-import { NextResponse } from 'next/server';
-import type { NextRequest } from 'next/server';
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
 
 export function middleware(req: NextRequest) {
   const res = NextResponse.next();
@@ -12,21 +12,21 @@ export function middleware(req: NextRequest) {
     "img-src 'self' data: blob:",
     "connect-src 'self' ws://localhost:8787 http://localhost:8787",
     "font-src 'self' data:",
-    "frame-ancestors 'self'"
-  ].join('; ');
+    "frame-ancestors 'self'",
+  ].join("; ");
 
   // ✅ אפשר מיקרופון בלוקאל-הוסט
   // אפשרות שמרנית:
   //   microphone=(self "http://localhost")
   // אם תרצה לפשט, אפשר גם:
   //   microphone=*
-  res.headers.set('Content-Security-Policy', csp);
-  res.headers.set('Permissions-Policy', 'microphone=(self "http://localhost")');
-  res.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
-  res.headers.set('X-Frame-Options', 'SAMEORIGIN');
-  res.headers.set('X-Content-Type-Options', 'nosniff');
+  res.headers.set("Content-Security-Policy", csp);
+  res.headers.set("Permissions-Policy", 'microphone=(self "http://localhost")');
+  res.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
+  res.headers.set("X-Frame-Options", "SAMEORIGIN");
+  res.headers.set("X-Content-Type-Options", "nosniff");
 
   return res;
 }
 
-export const config = { matcher: '/:path*' };
+export const config = { matcher: "/:path*" };

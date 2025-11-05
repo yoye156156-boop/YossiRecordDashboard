@@ -1,0 +1,208 @@
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import ApiLink from "../components/ApiLink.jsx";
+import ApiError from "../components/ApiError.jsx";
+import { dateHe, relativeHe } from "../utils/dateHelpers.js";
+import { renameItem } from "../utils/renameItem.js";
+const fmtDate = (msOrIso) => {
+  const ms = typeof msOrIso === "number" ? msOrIso : Date.parse(msOrIso);
+  return { main: dateHe(ms), sub: relativeHe(ms) };
+};
+
+
+
+const API = (import.meta.env?.VITE_API_URL || "http://localhost:3001").replace(
+  /\/+$/,
+  "",
+);
+
+export default function Recordings() {
+  const [items, setItems] = useState([]);
+const handleRename = async (oldName) => {  const ext = (oldName.match(/\.[^.]+$/) || [""])[0];  const baseDefault = oldName.replace(/\.[^.]+$/, "");  const input = window.prompt("שם חדש (כולל סיומת אם תרצה):", baseDefault + ext);  if (!input) return;  const newName = input.trim();  if (!newName) return;  const res = await renameItem(API, oldName, newName);  if (!res.ok) {    alert("שגיאה בשינוי שם: " + res.error);    return;  }  setRefresh((x) => x + 1);};
+  const [q, setQ] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState(null);
+  const audioRef = useRef(null);
+  const [playingName, setPlayingName] = useState(null);
+
+  async function refresh() {
+    setLoading(true);
+    setErrorMsg(null);
+    try {
+      const r = await fetch(`${API}/api/recordings`);
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const data = await r.json();
+      setItems(Array.isArray(data.items) ? data.items : []);
+    } catch (err) {
+      setErrorMsg(err?.message || "שגיאה לא ידועה");
+      setItems([]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    refresh();
+  }, []);
+
+  const filtered = useMemo(() => {
+    const s = (q || "").trim().toLowerCase();
+    if (!s) return items;
+    return items.filter((it) => {
+      const name = (it.name || "").toLowerCase();
+      const ext = (it.ext || "").toLowerCase();
+      const mime = (it.mime || "").toLowerCase();
+      return name.includes(s) || ext.includes(s) || mime.includes(s);
+    });
+  }, [q, items]);
+
+  function fileUrl(name) {
+    return `${API}/recordings/${encodeURIComponent(name)}`;
+  }
+
+  async function rename(oldName) {
+    const nn = window.prompt("שם חדש:", oldName);
+    if (!nn || nn === oldName) return;
+    try {
+      const r = await fetch(
+        `${API}/api/recordings/${encodeURIComponent(oldName)}`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ newName: nn }),
+        },
+      );
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      await refresh();
+      alert("שינוי שם הושלם");
+    } catch (e) {
+      alert(`שינוי שם נכשל: ${e.message}`);
+    }
+  }
+
+  async function remove(name) {
+    if (!window.confirm(`למחוק את "${name}"?`)) return;
+    try {
+      const r = await fetch(
+        `${API}/api/recordings/${encodeURIComponent(name)}`,
+        { method: "DELETE" },
+      );
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      await refresh();
+    } catch (e) {
+      alert(`מחיקה נכשלה: ${e.message}`);
+    }
+  }
+
+  function download(name) {
+    window.open(fileUrl(name), "_blank");
+  }
+
+  function play(name) {
+    const a = audioRef.current;
+    if (!a) return;
+    const url = fileUrl(name);
+    if (playingName === name && !a.paused) {
+      a.pause();
+      setPlayingName(null);
+      return;
+    }
+    a.src = url;
+    a.play()
+      .then(() => setPlayingName(name))
+      .catch((e) => {
+        alert(`ניגון נכשל: ${e.message}`);
+      });
+  }
+
+  return (
+    <div className="p-4 space-y-3">
+      <div className="text-sm text-gray-500">
+        API: <ApiLink url={API} />
+      </div>
+
+      {errorMsg && (
+        <div className="mb-2 p-2 rounded bg-red-50 text-red-800 text-sm">
+          שגיאה בטעינה: {errorMsg}
+        </div>
+      )}
+      <div className="flex gap-2 items-center">
+        <button
+          className="px-3 py-1 rounded bg-gray-900 text-white"
+          onClick={refresh}
+          disabled={loading}
+        >
+          רענן
+        </button>
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="…חיפוש לפי שם/תאריך/סוג"
+          className="flex-1 rounded border px-3 py-1"
+          dir="rtl"
+        />
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="w-full text-right">
+          <thead>
+            <tr className="border-b text-gray-600">
+              <th className="p-3">שם</th>
+              <th className="p-3">תאריך</th>
+              <th className="p-3">(KB) גודל</th>
+              <th className="p-3">פעולות</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.length === 0 && (
+              <tr>
+                <td className="p-6 text-center text-gray-400" colSpan={4}>
+                  אין הקלטות להצגה.
+                </td>
+              </tr>
+            )}
+            {filtered.map((it) => (
+              <tr key={it.name} className="border-b">
+                <td className="p-3">{it.name}</td>
+                <td className="p-3">
+                  {it.mtimeISO
+                    ? new Date(it.mtimeISO).toLocaleString("he-IL")
+                    : "—"}
+                </td>
+                <td className="p-3">{it.sizeKB ?? 0}</td>
+                <td className="p-3 flex gap-2 justify-end">
+                  <button
+                    className="px-3 py-1 rounded bg-indigo-700 text-white"
+                    onClick={() => play(it.name)}
+                  >
+                    נגן
+                  </button>
+                  <button
+                    className="px-3 py-1 rounded bg-black text-white"
+                    onClick={() => download(it.name)}
+                  >
+                    הורדה
+                  </button>
+                  <button
+                    className="px-3 py-1 rounded bg-amber-500 text-white"
+                    onClick={() => rename(it.name)}
+                  >
+                    שינוי שם
+                  </button>
+                  <button
+                    className="px-3 py-1 rounded bg-rose-600 text-white"
+                    onClick={() => remove(it.name)}
+                  >
+                    מחיקה
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <audio ref={audioRef} className="w-full mt-4" controls />
+      {loading && <ApiError text="טוען…" />}
+    </div>
+  );
+}

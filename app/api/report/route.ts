@@ -4,12 +4,26 @@ import { rateLimit } from "@/lib/rateLimit";
 
 export const runtime = "nodejs";
 
-type ReportBody = Partial<{ id: string; title: string; date: string; lines: string[] }>;
+type ReportBody = Partial<{
+  id: string;
+  title: string;
+  date: string;
+  lines: string[];
+}>;
 
-function parseBody(body: unknown): { id: string; title: string; date: string; lines: string[] } {
+function parseBody(body: unknown): {
+  id: string;
+  title: string;
+  date: string;
+  lines: string[];
+} {
   const b = (body ?? {}) as Record<string, unknown>;
-  const id = typeof b.id === "string" && b.id.trim() ? b.id : Date.now().toString();
-  const title = typeof b.title === "string" && b.title.trim() ? b.title : `דוח פגישה #${id}`;
+  const id =
+    typeof b.id === "string" && b.id.trim() ? b.id : Date.now().toString();
+  const title =
+    typeof b.title === "string" && b.title.trim()
+      ? b.title
+      : `דוח פגישה #${id}`;
   const date =
     typeof b.date === "string" && !Number.isNaN(Date.parse(b.date))
       ? b.date
@@ -19,7 +33,8 @@ function parseBody(body: unknown): { id: string; title: string; date: string; li
 }
 
 export async function POST(req: Request) {
-  const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "local";
+  const ip =
+    req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "local";
   if (!rateLimit(`report:${ip}`, 5, 60_000)) {
     return NextResponse.json({ error: "rate limit" }, { status: 429 });
   }
@@ -27,7 +42,9 @@ export async function POST(req: Request) {
   try {
     const raw = (await req.json().catch(() => ({}))) as ReportBody;
     const { id, title, date, lines } = parseBody(raw);
-    console.log(`[API] /api/report → id=${id}, title="${title}", date=${date}, lines=${lines.length}`);
+    console.log(
+      `[API] /api/report → id=${id}, title="${title}", date=${date}, lines=${lines.length}`,
+    );
 
     // מקבלים Uint8Array (עלול להיות עם SharedArrayBuffer מאחור)
     const pdfBytes = await buildPdf({ id, title, date, lines });
@@ -51,7 +68,7 @@ export async function POST(req: Request) {
     console.error("[API] /api/report error:", e);
     return NextResponse.json(
       { error: "failed to build report", detail: String(e) },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
