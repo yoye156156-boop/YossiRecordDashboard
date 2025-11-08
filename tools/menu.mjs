@@ -9,9 +9,13 @@ const ROOT = process.env.YOSSI_RECORDINGS_DIR || "./recordings";
 const extsRe = /\.(wav|mp3|m4a|ogg|oga|opus|flac|aac|m4b|aif|aiff|wma|alac)$/i;
 
 function humanBytes(n) {
-  const u = ["B","KB","MB","GB","TB"];
-  let i = 0, x = n;
-  while (x >= 1024 && i < u.length - 1) { x /= 1024; i++; }
+  const u = ["B", "KB", "MB", "GB", "TB"];
+  let i = 0,
+    x = n;
+  while (x >= 1024 && i < u.length - 1) {
+    x /= 1024;
+    i++;
+  }
   return x.toFixed(1) + " " + u[i];
 }
 
@@ -28,7 +32,7 @@ function walk(dir, base = dir, out = []) {
         rel: path.relative(base, full) || entry.name,
         full,
         size: st.size,
-        mtime: st.mtime
+        mtime: st.mtime,
       });
     }
   }
@@ -37,9 +41,12 @@ function walk(dir, base = dir, out = []) {
 
 function parseSelection(input, max) {
   const set = new Set();
-  for (const part of String(input).split(",").map(s => s.trim()).filter(Boolean)) {
+  for (const part of String(input)
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)) {
     if (part.includes("-")) {
-      const [a, b] = part.split("-").map(v => parseInt(v, 10));
+      const [a, b] = part.split("-").map((v) => parseInt(v, 10));
       if (!Number.isInteger(a) || !Number.isInteger(b)) continue;
       const from = Math.max(1, Math.min(a, b));
       const to = Math.min(max, Math.max(a, b));
@@ -66,16 +73,28 @@ async function main() {
     const files = walk(ROOT).sort((a, b) => b.mtime - a.mtime);
     if (!files.length) {
       output.write("\nNo audio files found under " + ROOT + "\n");
-      output.write("Supported: .wav .mp3 .m4a .ogg .oga .opus .flac .aac .m4b .aif .aiff .wma .alac\n");
-      output.write("Tip: set YOSSI_RECORDINGS_DIR=/path/to/dir to scan another folder.\n\n");
+      output.write(
+        "Supported: .wav .mp3 .m4a .ogg .oga .opus .flac .aac .m4b .aif .aiff .wma .alac\n",
+      );
+      output.write(
+        "Tip: set YOSSI_RECORDINGS_DIR=/path/to/dir to scan another folder.\n\n",
+      );
       process.exit(1);
     }
 
-    output.write("\nSelect files to process (single or multiple: 3 or 1,3-5):\n");
+    output.write(
+      "\nSelect files to process (single or multiple: 3 or 1,3-5):\n",
+    );
     files.forEach((f, i) => {
       output.write(
-        String(i + 1).padStart(3, " ") + ". " +
-        f.rel + "  (" + humanBytes(f.size) + ", " + f.mtime.toLocaleString() + ")\n"
+        String(i + 1).padStart(3, " ") +
+          ". " +
+          f.rel +
+          "  (" +
+          humanBytes(f.size) +
+          ", " +
+          f.mtime.toLocaleString() +
+          ")\n",
       );
     });
 
@@ -83,11 +102,15 @@ async function main() {
     const picks = parseSelection(ans, files.length);
     if (!picks.length) throw new Error("No valid selection.");
 
-    let ok = 0, fail = 0;
+    let ok = 0,
+      fail = 0;
     for (const idx of picks) {
       const f = files[idx - 1];
       const suggested = f.rel.replace(extsRe, "").replaceAll("_", " ");
-      const patient = (await rl.question(`Patient name for "${f.rel}" (default: "${suggested}"): `)) || suggested;
+      const patient =
+        (await rl.question(
+          `Patient name for "${f.rel}" (default: "${suggested}"): `,
+        )) || suggested;
 
       output.write(`\n→ Processing: ${f.rel}  as "${patient}"\n`);
       try {

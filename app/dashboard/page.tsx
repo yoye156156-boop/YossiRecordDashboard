@@ -1,11 +1,14 @@
 export default function DashboardPage() {
   return (
-    <main dir="rtl" style={{
-      fontFamily: "system-ui, Arial, sans-serif",
-      padding: "32px",
-      maxWidth: 900,
-      margin: "0 auto"
-    }}>
+    <main
+      dir="rtl"
+      style={{
+        fontFamily: "system-ui, Arial, sans-serif",
+        padding: "32px",
+        maxWidth: 900,
+        margin: "0 auto",
+      }}
+    >
       <h1 style={{ marginBottom: 16 }}>ברוך הבא ללוח הבקרה</h1>
 
       <button
@@ -18,7 +21,7 @@ export default function DashboardPage() {
           background: "#4caf50",
           color: "#fff",
           cursor: "pointer",
-          marginBottom: 24
+          marginBottom: 24,
         }}
       >
         התחל פגישה חדשה

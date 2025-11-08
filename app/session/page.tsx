@@ -1,18 +1,18 @@
-'use client';
-import { useEffect, useState } from 'react';
+"use client";
+import { useEffect, useState } from "react";
 
 export default function SessionPage() {
   const [running, setRunning] = useState(false);
-  const [title, setTitle] = useState('דוח פגישה');
-  const [lines, setLines] = useState<string[]>(['']);
+  const [title, setTitle] = useState("דוח פגישה");
+  const [lines, setLines] = useState<string[]>([""]);
 
   // שליפה מ-localStorage
   useEffect(() => {
-    const saved = localStorage.getItem('sessionData');
+    const saved = localStorage.getItem("sessionData");
     if (saved) {
       try {
         const data = JSON.parse(saved);
-        if (typeof data?.title === 'string') setTitle(data.title);
+        if (typeof data?.title === "string") setTitle(data.title);
         if (Array.isArray(data?.lines)) setLines(data.lines);
       } catch {}
     }
@@ -20,27 +20,32 @@ export default function SessionPage() {
 
   // שמירה אוטומטית ל-localStorage
   useEffect(() => {
-    localStorage.setItem('sessionData', JSON.stringify({ title, lines }));
+    localStorage.setItem("sessionData", JSON.stringify({ title, lines }));
   }, [title, lines]);
 
-  const addLine = () => setLines((s) => [...s, '']);
+  const addLine = () => setLines((s) => [...s, ""]);
   const updateLine = (i: number, val: string) =>
     setLines((s) => s.map((v, idx) => (idx === i ? val : v)));
-  const removeLine = (i: number) => setLines((s) => s.filter((_, idx) => idx !== i));
+  const removeLine = (i: number) =>
+    setLines((s) => s.filter((_, idx) => idx !== i));
 
-  const exportFile = async (format: 'pdf' | 'docx') => {
-    const url = format === 'pdf' ? '/api/report' : '/api/report/docx';
+  const exportFile = async (format: "pdf" | "docx") => {
+    const url = format === "pdf" ? "/api/report" : "/api/report/docx";
     const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title, date: new Date().toLocaleString('he-IL'), lines }),
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title,
+        date: new Date().toLocaleString("he-IL"),
+        lines,
+      }),
     });
     if (!res.ok) {
       alert(`נכשל ביצוא ${format.toUpperCase()}`);
       return;
     }
     const blob = await res.blob();
-    const a = document.createElement('a');
+    const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
     a.download = `${title}.${format}`;
     a.click();
@@ -48,14 +53,18 @@ export default function SessionPage() {
   };
 
   const saveToArchive = async () => {
-    const res = await fetch('/api/archive', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title, date: new Date().toLocaleString('he-IL'), lines }),
+    const res = await fetch("/api/archive", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title,
+        date: new Date().toLocaleString("he-IL"),
+        lines,
+      }),
     });
     const data = await res.json().catch(() => ({}));
-    if (data && data.ok) alert('נשמר בארכיון בהצלחה');
-    else alert('שמירה לארכיון נכשלה');
+    if (data && data.ok) alert("נשמר בארכיון בהצלחה");
+    else alert("שמירה לארכיון נכשלה");
   };
 
   return (
@@ -67,7 +76,7 @@ export default function SessionPage() {
           className="px-3 py-2 rounded bg-gray-100 shadow-sm hover:bg-gray-200 active:scale-95 transition-transform"
           onClick={() => setRunning((r) => !r)}
         >
-          {running ? 'עצור' : 'התחל'}
+          {running ? "עצור" : "התחל"}
         </button>
         <button
           className="px-3 py-2 rounded bg-gray-100 shadow-sm hover:bg-gray-200 active:scale-95 transition-transform"
@@ -77,13 +86,13 @@ export default function SessionPage() {
         </button>
         <button
           className="px-3 py-2 rounded bg-gray-100 shadow-sm hover:bg-gray-200 active:scale-95 transition-transform"
-          onClick={() => exportFile('pdf')}
+          onClick={() => exportFile("pdf")}
         >
           ייצא ל־PDF
         </button>
         <button
           className="px-3 py-2 rounded bg-gray-100 shadow-sm hover:bg-gray-200 active:scale-95 transition-transform"
-          onClick={() => exportFile('docx')}
+          onClick={() => exportFile("docx")}
         >
           ייצא ל־DOCX
         </button>

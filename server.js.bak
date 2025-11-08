@@ -1,0 +1,111 @@
+import express from "express";
+import cors from "cors";
+import dotenv from "dotenv";
+import fs from "fs";
+import path from "path";
+import multer from "multer";
+
+dotenv.config();
+
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+const PORT = process.env.PORT || 3001;
+const RECORDINGS_DIR = process.env.RECORDINGS_DIR || "./recordings";
+
+// ודא שהתיקייה קיימת
+fs.mkdirSync(RECORDINGS_DIR, { recursive: true });
+
+// בדיקת ווליום/כתיבה
+try {
+  const testFile = path.join(RECORDINGS_DIR, "_volume_check.txt");
+  fs.writeFileSync(testFile, "✅ Volume OK " + new Date().toISOString());
+  console.log("✅ Volume check: created", testFile);
+} catch (err) {
+  console.error("❌ Volume check failed:", err.message);
+}
+
+// =============================
+// 📥 Multer diskStorage ⇒ שומר ישירות לתיקיית היעד
+// =============================
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, RECORDINGS_DIR),
+  filename: (req, file, cb) => {
+    const fallback = "recording_" + Date.now();
+    const safe = (file.originalname || fallback).replace(/[^\w.\-]+/g, "_");
+    cb(null, safe);
+  },
+});
+const upload = multer({ storage });
+
+// =============================
+// 📥 Upload route
+// =============================
+app.post("/api/upload", upload.single("file"), (req, res) => {
+  try {
+    // בשימוש ב-diskStorage אין צורך ב-rename — הקובץ כבר בתיקייה הסופית
+    console.log("✅ Uploaded recording saved:", req.file.path);
+    res.json({ ok: true, name: path.basename(req.file.path) });
+  } catch (err) {
+    console.error("❌ Upload save error:", err.message);
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// =============================
+// 🎧 List recordings
+// =============================
+app.get("/api/recordings", (req, res) => {
+  try {
+    const files = fs.readdirSync(RECORDINGS_DIR).map((name) => {
+      const stats = fs.statSync(path.join(RECORDINGS_DIR, name));
+      return { name, size: stats.size, mtimeMs: stats.mtimeMs };
+    });
+    res.json(files);
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// =============================
+// 🗑 Delete file
+// =============================
+app.delete("/api/recordings/:name", (req, res) => {
+  const filePath = path.join(RECORDINGS_DIR, req.params.name);
+  try {
+    fs.unlinkSync(filePath);
+    console.log("🗑 Deleted:", req.params.name);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("❌ Delete failed:", err.message);
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// =============================
+// ▶️ Serve recordings inline (לא להורדה אוטומטית)
+// =============================
+app.get("/recordings/:name", (req, res) => {
+  const filePath = path.join(RECORDINGS_DIR, req.params.name);
+  if (!fs.existsSync(filePath)) return res.status(404).send("File not found");
+  const ext = path.extname(filePath).toLowerCase();
+  let mime = "application/octet-stream";
+  if (ext === ".wav") mime = "audio/wav";
+  else if (ext === ".mp3") mime = "audio/mpeg";
+  else if (ext === ".mp4") mime = "video/mp4";
+  res.setHeader("Content-Type", mime);
+  res.setHeader("Content-Disposition", "inline");
+  res.sendFile(path.resolve(filePath));
+});
+
+// =============================
+// 🩺 Health
+// =============================
+app.get("/api/health", (req, res) => {
+  res.json({ ok: true, dir: RECORDINGS_DIR, time: new Date().toISOString() });
+});
+
+app.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT}`);
+});

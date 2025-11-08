@@ -1,65 +1,108 @@
-import React, { useEffect, useState } from "react";
-import RecordingsTable from "../components/RecordingsTable.jsx";
+import { useEffect, useState } from "react";
+import RenameButton from "../components/RenameButton.jsx";
+import {
+  recordingUrl,
+  markdownUrl,
+  pdfUrl,
+  summaryJsonUrl,
+  deleteRecording,
+} from "../utils/api";
 
-export default function RecordingsPage() {
-  const [items, setItems] = useState([]);
-  const [q, setQ] = useState("");
+export default function Recordings() {
+  const [list, setList] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState("");
 
-  const load = async () => {
+  async function fetchList() {
     try {
-      const res = await fetch("http://localhost:3001/api/recordings");
-      const data = await res.json();
-      const normalized = Array.isArray(data)
+      setLoading(true);
+      setErr("");
+      const base = import.meta.env.VITE_API_URL || "";
+      const r = await fetch(`${base}/api/recordings?t=${Date.now()}`, {
+        cache: "no-store",
+        headers: { "Cache-Control": "no-cache" },
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const data = await r.json();
+      const items = Array.isArray(data)
         ? data.map((x) => (typeof x === "string" ? { name: x } : x))
+        : Array.isArray(data?.items)
+        ? data.items.map((x) => (typeof x === "string" ? { name: x } : x))
         : [];
-      setItems(normalized);
-    } catch (e) { console.error("load() error:", e); }
-  };
-
-  useEffect(() => { load(); }, []);
-
-  const handleDelete = async (name) => {
-    console.log("[UI] delete clicked:", name);
-    try {
-      const res = await fetch(`http://localhost:3001/api/recordings/${encodeURIComponent(name)}`, { method: "DELETE" });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        console.warn("[UI] delete failed:", err);
-        alert(`מחיקה נכשלה: ${err?.error || res.status}`);
-        return;
-      }
-      // עדכון מיידי + רענון רשימה מהשרת
-      setItems((prev) => prev.filter((f) => f.name !== name));
-      setTimeout(load, 200);
+      setList(items);
     } catch (e) {
-      console.error("[UI] delete exception:", e);
-      alert("שגיאה במחיקה, בדוק שרת/הרשאות");
+      setErr(e?.message || "load failed");
+    } finally {
+      setLoading(false);
     }
-  };
+  }
 
-  const filtered = items.filter((f) => {
-    if (!q.trim()) return true;
-    const hay = `${f.name} ${new Date(f.mtimeMs || 0).toLocaleString("he-IL")}`.toLowerCase();
-    return hay.includes(q.trim().toLowerCase());
-  });
+  useEffect(() => { fetchList(); }, []);
+
+  if (loading) return <div className="p-6">טוען…</div>;
+  if (err) return <div className="p-6 text-red-600">שגיאה: {String(err)}</div>;
 
   return (
-    <div className="p-4 space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-3xl md:text-4xl font-extrabold">ארכיון הקלטות</h1>
-      </div>
+    <div className="p-6 space-y-4">
+      <h1 className="text-2xl font-semibold mb-2">ארכיון הקלטות</h1>
+      {list.length === 0 ? (
+        <div className="text-gray-500">אין עדיין הקלטות.</div>
+      ) : (
+        <ul className="space-y-3">
+          {list.map((item) => {
+            const name = item.name || String(item);
+            const base = name.replace(/\.webm$/i, "");
+            return (
+              <li key={name} className="flex items-center justify-between rounded-xl border p-3 gap-3">
+                <div className="truncate text-sm">{name}</div>
+                <div className="flex items-center gap-2">
+                  <a className="px-3 py-1 rounded-lg border text-sm hover:bg-gray-50"
+                     href={recordingUrl(name)}
+                     target="_blank" rel="noreferrer">
+                    האזנה
+                  </a>
 
-      <div className="flex justify-end">
-        <input
-          className="border rounded-xl px-4 py-2 outline-none"
-          placeholder="...חיפוש לפי שם/תאריך"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          dir="rtl"
-        />
-      </div>
+                  <a className="px-3 py-1 rounded-lg border text-sm hover:bg-gray-50"
+                     href={recordingUrl(name)}
+                     download>
+                    הורדה
+                  </a>
 
-      <RecordingsTable recordings={filtered} onDelete={handleDelete} />
+                  <a className="px-3 py-1 rounded-lg border text-sm hover:bg-gray-50"
+                     href={markdownUrl(base)}
+                     target="_blank" rel="noreferrer">
+                    Markdown
+                  </a>
+
+                  <a className="px-3 py-1 rounded-lg border text-sm hover:bg-gray-50"
+                     href={pdfUrl(base)}
+                     target="_blank" rel="noreferrer">
+                    PDF
+                  </a>
+
+                  <a className="px-3 py-1 rounded-lg border text-sm hover:bg-gray-50"
+                     href={summaryJsonUrl(base)}
+                     target="_blank" rel="noreferrer">
+                    כתב אחרי (JSON)
+                  </a>
+
+                  <RenameButton name={name} onDone={fetchList} />
+
+                  <button
+                    className="px-3 py-1 rounded-lg border text-sm hover:bg-red-50 text-red-600"
+                    onClick={async () => {
+                      if (!confirm("למחוק את ההקלטה?")) return;
+                      try { await deleteRecording(name); await fetchList(); }
+                      catch (e) { alert("מחיקה נכשלה: " + (e?.message || "unknown")); }
+                    }}>
+                    מחיקה
+                  </button>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
     </div>
   );
 }

@@ -1,0 +1,288 @@
+import React from "react";
+import InlinePlayer from "../components/InlinePlayer";
+
+const API = import.meta.env.VITE_API_URL?.replace(/\/$/, "") || "http://localhost:3001";
+
+function toKb(size) {
+  if (size == null) return "—";
+  return Math.round(size / 1024);
+}
+
+function hebDate(dtISO) {
+  if (!dtISO) return ;
+  const d = new Date(dtISO);
+  const line1 = new Intl.DateTimeFormat("he-IL", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(d);
+
+  // יחסי: היום/אתמול/לפני X ימים
+  const now = new Date();
+  const diffDays = Math.floor((Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()) -
+                               Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())) / 86400000);
+  let rel = "לפני " + diffDays + " ימים";
+  if (diffDays === 0) rel = "היום";
+  if (diffDays === 1) rel = "אתמול";
+  return ;
+}
+
+export default function Recordings() {
+  const [items, setItems] = useState([]);
+  const [errorMsg, setErrorMsg] = useState(null)([]); // []
+  const [q, setQ] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  // נגן מוטמע: נשמור שם פעיל וקישור
+  const [expandedName, setExpandedName] = useState(null);
+
+  // לשמור רפרנס לנגנים אחרים כדי לעצור כשמחליפים
+  const playingGuard = useRef(); // רק לדגל, לא חובה כרגע
+
+async function refresh() {
+  setLoading(true);
+  try {
+    console.log("[Recordings] API base:", API);
+    const res = await fetch(`$/api/recordings`);
+    if (!res.ok) {
+      const txt = await res.text().catch(() => "");
+      throw new Error(`HTTP $ - ${txt}`);
+    }
+
+    const raw = await res.json();
+    console.log("[Recordings] raw response:", raw);
+
+    // תומך גם במבנה  וגם במערך ישיר
+    const arr = Array.isArray(raw)
+      ? raw
+      : Array.isArray(raw?.files)
+      ? raw.files
+      : [];
+
+    const norm = arr
+      .map((x) => ({
+        name: x.name ?? x.fileName ?? x.filename ?? "",
+        size: x.size ?? x.bytes ?? 0,
+        mtime: x.mtime ?? x.modified ?? x.mtimeMs ?? x.lastModified ?? null,
+        mime: x.mime ?? x.type ?? "",
+      }))
+      .filter((x) => x.name);
+
+    norm.sort((a, b) => (b.mtime || "").localeCompare(a.mtime || ""));
+    setItems(norm);
+    setErrorMsg(null);
+  } catch (e) {
+    console.error("[Recordings] refresh error:", e);
+    setItems([]);
+    setErrorMsg(e?.message || "שגיאת טעינה");
+  } finally {
+    setLoading(false);
+  }
+}
+
+  useEffect(() => {
+    refresh();
+  }, []);
+
+  const filtered = useMemo(() => {
+    const s = q.trim().toLowerCase();
+    if (!s) return items;
+    return items.filter((r) => {
+      const  = r;
+      return (
+        name?.toLowerCase().includes(s) ||
+        mime?.toLowerCase().includes(s) ||
+        (mtime && new Date(mtime).toLocaleDateString("he-IL").includes(s))
+      );
+    });
+  }, [q, items]);
+
+  async function download(name) {
+    const url = `$/recordings/${encodeURIComponent(name)}`;
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }
+
+  async function del(name) {
+    if (!confirm(`בטוח למחוק את "$"?`)) return;
+    const res = await fetch(`$/api/recordings/${encodeURIComponent(name)}`, {
+      method: "DELETE",
+    });
+    if (res.ok) {
+      setItems((lst) => lst.filter((x) => x.name !== name));
+      if (expandedName === name) setExpandedName(null);
+    } else {
+      alert("מחיקה נכשלה");
+    }
+  }
+
+  async function rename(name) {
+    const proposed = prompt("שם חדש:", name);
+    if (proposed == null) return;
+    const newName = proposed.trim();
+    if (!newName || newName === name) return;
+
+    const res = await fetch(`$/api/recordings/${encodeURIComponent(name)}/rename`, {
+      method: "POST",
+      headers: ,
+      body: JSON.stringify(),
+    });
+    if (res.ok) {
+      // עדכון לוקאלי
+      setItems((lst) =>
+        lst.map((x) => (x.name === name ?  : x))
+      );
+      if (expandedName === name) setExpandedName(newName);
+      alert("שם עודכן בהצלחה");
+    } else {
+      alert("שינוי שם נכשל");
+    }
+  }
+
+  // פתיחת נגן (ווידוא שנגן אחד בלבד פתוח)
+  function playInline(name) {
+    setExpandedName((cur) => (cur === name ? null : name));
+  }
+
+  // עזרה לתצוגת API בראש העמוד
+  const ApiLink = () => (
+    <div className="text-sm text-gray-500 mb-2">
+      API:
+      <a className="underline text-blue-600" href= target="_blank" rel="noreferrer">
+        
+      </a>
+    </div>
+  );
+
+  return (
+    <div className="p-4 max-w-5xl mx-auto">
+      <div className="flex items-center gap-2 mb-2">
+        <button
+          onClick=
+          className="px-3 py-1 rounded-lg bg-gray-900 text-white"
+          disabled=
+        >
+          רענן
+        </button>
+        <input
+          className="flex-1 px-3 py-2 rounded-lg border"
+          placeholder="…חיפוש לפי שם/תאריך/סוג"
+          value=
+          onChange=
+        />
+      </div>
+
+      <ApiLink />
+      {errorMsg && (
+        <div className="mb-2 p-2 rounded bg-red-50 text-red-800 text-sm">
+          שגיאה בטעינה: 
+        </div>
+      )}
+      <ApiError />
+      <ApiError />
+
+      <div className="rounded-2xl shadow border overflow-hidden">
+        <table className="w-full text-right">
+          <thead className="bg-gray-100">
+            <tr>
+              <th className="p-3">פעולות</th>
+              <th className="p-3">(KB) גודל</th>
+              <th className="p-3">תאריך</th>
+              <th className="p-3">שם</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map((r) => {
+              const d = hebDate(r.mtime);
+              const isOpen = expandedName === r.name;
+              const src = `$/recordings/${encodeURIComponent(r.name)}`;
+              return (
+                <React.Fragment key=>
+                  <tr className="border-t">
+                    <td className="p-2 whitespace-nowrap">
+                      <div className="flex gap-2">
+                        <button
+                          onClick=
+                          className={`px-3 py-1 rounded-lg text-white ${
+                            isOpen ? "bg-purple-600" : "bg-indigo-600"
+                          }`}
+                          title="נגן מוטמע"
+                        >
+                          
+                        </button>
+                        <button
+                          onClick=
+                          className="px-3 py-1 rounded-lg bg-gray-900 text-white"
+                        >
+                          הורדה
+                        </button>
+                        <button
+                          onClick=
+                          className="px-3 py-1 rounded-lg bg-amber-500 text-white"
+                        >
+                          שינוי שם
+                        </button>
+                        <button
+                          onClick=
+                          className="px-3 py-1 rounded-lg bg-rose-600 text-white"
+                        >
+                          מחיקה
+                        </button>
+                      </div>
+                    </td>
+                    <td className="p-2 text-gray-700"></td>
+                    <td className="p-2">
+                      <div></div>
+                      <div className="text-xs text-gray-500"></div>
+                    </td>
+                    <td className="p-2 font-medium"></td>
+                  </tr>
+
+                  {isOpen && (
+                    <tr className="bg-gray-50">
+                      <td colSpan= className="p-3">
+                        <InlinePlayer
+                          src=
+                          onPlay={() => {
+                            // דואג שרק נגן אחד פעיל — ע"י סטייט יחיד אנחנו כבר מכוסים.
+                          }}
+                          onEnded=
+                        />
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
+              );
+            })}
+            {filtered.length === 0 && (
+              <tr>
+                <td colSpan= className="p-8 text-center text-gray-500">
+                  אין הקלטות להצגה.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="text-xs text-gray-500 mt-3">
+        טיפ: אפשר לחפש לפי שם, תאריך (למשל “03.11.2025”) או לפי סוג/סיומת.
+      </div>
+    </div>
+  );
+}
+
+// מצב לשגיאות טעינה
+const [errorMsg, setErrorMsg] = useState(null);
+
+{errorMsg && (
+  <div className="mb-2 p-2 rounded bg-red-50 text-red-800 text-sm">
+    שגיאה בטעינה: 
+  </div>
+)}

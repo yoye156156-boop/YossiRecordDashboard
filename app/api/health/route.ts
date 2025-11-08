@@ -1,5 +1,5 @@
-import { NextResponse } from 'next/server';
-export const runtime = 'nodejs';
+import { NextResponse } from "next/server";
+export const runtime = "nodejs";
 
 export async function GET() {
   try {
@@ -11,9 +11,12 @@ export async function GET() {
       rss_mb: Math.round(mem.rss / 1024 / 1024),
       heap_mb: Math.round(mem.heapUsed / 1024 / 1024),
       node: process.version,
-      env: process.env.NODE_ENV ?? 'development',
+      env: process.env.NODE_ENV ?? "development",
     });
   } catch (e) {
-    return NextResponse.json({ ok: false, error: (e as Error).message }, { status: 500 });
+    return NextResponse.json(
+      { ok: false, error: (e as Error).message },
+      { status: 500 },
+    );
   }
 }
