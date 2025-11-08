@@ -1,3 +1,5 @@
+import { useState } from "react";
+import Toast from "./Toast";
 import React, { useEffect, useRef, useState } from "react";
 
 const pickMime = () => {
@@ -38,6 +40,7 @@ export default function Recorder() {
   const [deviceId, setDeviceId] = useState("");
   const [isRecording, setIsRecording] = useState(false);
   const [msg, setMsg] = useState("");
+  const [toastMsg, setToastMsg] = useState("");
   const [blobUrl, setBlobUrl] = useState("");
   const [blob, setBlob] = useState(null);
 
@@ -107,7 +110,7 @@ export default function Recorder() {
             ? "webm"
             : "weba";
         setMsg(`✅ הוקלט (${Math.round(finalBlob.size / 1024)}KB, ${ext})`);
-      };
+      w};
 
       // timeslice קטן עוזר לפיירפוקס להוציא dataavailable בזמן אמת
       rec.start(250);
@@ -180,6 +183,8 @@ export default function Recorder() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
       setMsg(`✅ הועלה: ${data?.name || "OK"}`);
+    setToastMsg("✨ נוצר כתב אחרי אוטומטי בצד השרת!");
+     window.dispatchEvent(new CustomEvent('recording:uploaded', { detail: { name: data?.name } }));
     } catch (e) {
       console.error(e);
       setMsg("❌ כשל בהעלאה: " + (e?.message || e));
@@ -269,6 +274,7 @@ export default function Recorder() {
         טיפ: אם אין קול, פתח <code>pavucontrol</code> → Recording ובחר את המקור
         (לא “Monitor of …”).
       </div>
-    </div>
+       <Toast message={toastMsg} onClose={() => setToastMsg("")} />   
+ </div>
   );
 }

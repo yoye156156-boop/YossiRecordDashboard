@@ -5,19 +5,32 @@
   "type": "module",
   "scripts": {
     "api": "node server.mjs",
-    "web:build": "cd dashboard && npm run build",
-    "web:preview": "cd dashboard && npx vite preview --host 0.0.0.0 --port 5174",
-    "preview:all": "concurrently -n API,WEB -c green,magenta \"node server.mjs\" \"cd dashboard && npx vite preview --host 0.0.0.0 --port 5174\"",
+    "web:dev": "cd dashboard && vite --host --port 5173",
+    "web:preview": "cd dashboard && vite preview --host 0.0.0.0 --port 5174",
+    "dev:all": "concurrently -n API,WEB -c green,cyan \"node server.mjs\" \"cd dashboard && VITE_API_URL=http://10.0.2.15:3001 vite --host --port 5173\"",
+    "build:web:local": "cd dashboard && VITE_API_URL=http://10.0.2.15:3001 npm run build",
+    "preview:all": "concurrently -n API,WEB -c green,magenta \"node server.mjs\" \"cd dashboard && vite preview --host 0.0.0.0 --port 5174\"",
     "smoke": "bash scripts/smoke.sh",
-    "test:smoke": "node --test tests/smoke.test.js"
+    "test:smoke": "node --test tests/smoke.test.js",
+
+    // 🟢 נוספו שתי פקודות חדשות ל־Production:
+    "build:client": "cd dashboard && npm ci && npm run build",
+    "build": "npm run build:client",
+    "start": "node server.mjs"
+  },
+  "engines": {
+    "node": ">=18"
   },
   "dependencies": {
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
+    "marked": "^16.4.1",
     "mime-types": "^2.1.35",
     "morgan": "^1.10.0",
-    "multer": "^2.0.2"
+    "multer": "^2.0.2",
+    "node-fetch": "^3.3.2",
+    "puppeteer": "^24.29.1"
   },
   "devDependencies": {
     "concurrently": "^8.2.2"

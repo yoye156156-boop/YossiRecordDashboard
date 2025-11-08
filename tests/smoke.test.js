@@ -76,3 +76,26 @@ test('תשובת /api/recordings מכילה מפתחות צפויים', async ()
     assert.ok(typeof json === 'object', 'JSON הוא אובייקט');
   }
 });
+
+import test from 'node:test';
+import assert from 'node:assert/strict';
+
+
+const API = process.env.API || 'http://127.0.0.1:3001';
+
+
+test('summarize mock returns ok', async (t) => {
+// require an existing file – create a tiny temp file
+const resUp = await fetch(`${API}/api/upload`, {
+method: 'POST',
+body: (() => { const fd = new FormData(); fd.append('file', new Blob(['x'], { type: 'audio/webm' }), 'tmp.webm'); return fd; })()
+});
+const up = await resUp.json();
+assert.equal(up.ok, true);
+
+
+const res = await fetch(`${API}/api/summarize`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: up.name }) });
+const js = await res.json();
+assert.equal(js.ok, true);
+assert.equal(typeof js.summary, 'object');
+});
